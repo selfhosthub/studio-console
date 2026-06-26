@@ -1,0 +1,89 @@
+upstream studio_api {
+    ip_hash;
+{{API_UPSTREAM}}
+}
+
+upstream studio_ui {
+{{UI_UPSTREAM}}
+}
+
+server {
+    listen 80;
+
+    # Compression — all responses are proxied from upstreams, so gzip_proxied
+    # must be set or nginx skips them by default.
+    gzip              on;
+    gzip_vary         on;
+    gzip_proxied      any;
+    gzip_comp_level   5;
+    gzip_min_length   256;
+    gzip_types
+        application/json
+        application/javascript
+        text/javascript
+        text/css
+        text/plain
+        application/xml
+        image/svg+xml
+        application/rss+xml
+        font/ttf
+        font/otf
+        application/font-woff;
+
+    # Health endpoint for the nginx container itself
+    location /nginx-health {
+        access_log off;
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
+    }
+
+    # API health check (top-level route, not under /api)
+    location = /health {
+        proxy_pass http://studio_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # API + WebSocket + static uploads (org media served by API)
+    location ~ ^/(api|ws|uploads)(/|$) {
+        proxy_pass http://studio_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket upgrade
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
+    # Hashed Next.js assets — content-hashed filenames, safe to cache forever.
+    location /_next/static/ {
+        proxy_pass http://studio_ui;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # UI (everything else)
+    location / {
+        proxy_pass http://studio_ui;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# WebSocket connection upgrade map (referenced above)
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ""      close;
+}

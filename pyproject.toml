@@ -1,0 +1,52 @@
+[project]
+name = "studio-console"
+description = "Studio operator management console"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "cryptography>=41.0",
+]
+license = { text = "MIT" }
+keywords = ["studio", "selfhost", "operator", "console"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+]
+dynamic = ["version"]
+
+[project.scripts]
+studio-console = "studio_console:main"
+
+[project.urls]
+Homepage = "https://github.com/selfhosthub/studio-console"
+Issues = "https://github.com/selfhosthub/studio-console/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "VERSION"
+pattern = "^(?P<version>.+)$"
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "studio_console/",
+    "docker-compose.yml",
+    "nginx/",
+    "templates/",
+    "VERSION",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "studio_console/",
+    "docker-compose.yml",
+    "nginx/",
+    "templates/",
+    "VERSION",
+    "install.sh",
+    "studio-console.py",
+]

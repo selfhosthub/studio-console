@@ -1,0 +1,42 @@
+# cliff.toml — release-notes generator config for studio-console.
+#
+# Generates the body of each GitHub release from commits since the last tag.
+# Commit messages following Conventional Commits get grouped into sections
+# (Features, Bug Fixes, etc). Anything else falls under "Other".
+
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | upper_first | trim }}\
+  {% if commit.id %} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/selfhosthub/studio-console/commit/{{ commit.id }})){% endif %}
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+
+commit_parsers = [
+    { message = "^feat",     group = "Features" },
+    { message = "^fix",      group = "Bug Fixes" },
+    { message = "^perf",     group = "Performance" },
+    { message = "^refactor", group = "Refactor" },
+    { message = "^docs",     group = "Documentation" },
+    { message = "^chore",    skip = true },
+    { message = "^ci",       skip = true },
+    { message = "^test",     skip = true },
+    { message = "^Release",  skip = true },
+    { message = "^Reset",    skip = true },
+    { message = ".*",        group = "Other" },
+]
+
+filter_commits = false
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
+sort_commits = "newest"
