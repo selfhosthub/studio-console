@@ -26,7 +26,7 @@ from .commands import (
     config_menu,
 )
 from .commands_container import container_menu
-from .commands_launch import cmd_launch_full
+from .commands_launch import cmd_launch_core, cmd_launch_full, cmd_set_core_db_url
 from .env import _workspace_dir, detect_context, env_path
 from .tui import NavBack, NavExit
 from .wizard import wizard, wizard_non_interactive
@@ -86,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_launch = sub.add_parser("launch-full", help="Launch the self-contained full image and open its console")
     p_launch.add_argument("--tag", help="Image tag to launch (default: latest)")
     p_launch.add_argument("--workspace", help="Host data dir (default: ~/.studio)")
+    p_launch_core = sub.add_parser("launch-core", help="Launch the core image (external Postgres) and open its console")
+    p_launch_core.add_argument("--tag", help="Image tag to launch (default: latest)")
+    p_launch_core.add_argument("--workspace", help="Host data dir (default: ~/.studio-core)")
+    p_core_db = sub.add_parser("core-db-url", help="Set core's external database URL for the next launch-core")
+    p_core_db.add_argument("url", nargs="?", default=None, help="postgresql+asyncpg://user:pass@host:5432/db (prompts if omitted)")
     sub.add_parser("wizard", help="Run setup wizard")
     sub.add_parser("init", help="Non-interactive setup from env vars (undocumented)")
     sub.add_parser("self-update", help="Update studio-console to the latest version")
@@ -145,6 +150,14 @@ def main() -> None:
                 Path(os.path.expanduser(args.workspace)) if args.workspace else None,
             ) else 1
         ),
+        "launch-core": lambda: sys.exit(
+            0 if cmd_launch_core(
+                context,
+                args.tag,
+                Path(os.path.expanduser(args.workspace)) if args.workspace else None,
+            ) else 1
+        ),
+        "core-db-url": lambda: sys.exit(0 if cmd_set_core_db_url(context, args.url) else 1),
         "wizard": lambda: wizard(context, ef),
         "init": lambda: sys.exit(0 if wizard_non_interactive(context, ef) else 1),
         "self-update": lambda: cmd_self_update(context),

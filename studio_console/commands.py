@@ -1006,6 +1006,44 @@ def _full_plan(container: str) -> "_BootstrapPlan":
     )
 
 
+def _core_plan(container: str, pg_container: str) -> "_BootstrapPlan":
+    # Core's API runs in `container`, but Postgres is an external sidecar
+    # (`pg_container`) — so password hashing execs into the API container while
+    # every psql runs against the sidecar. base omits "exec"; helpers append it.
+    return _BootstrapPlan(
+        base=["docker"],
+        api_svc=container,
+        pg_svc=pg_container,
+        api_base="http://localhost:8000/api/v1",
+        exec_flags=[],
+    )
+
+
+def _read_env_for_bootstrap(env_file: Path, plan: "_BootstrapPlan | None") -> dict:
+    """Read .env for the bootstrap flow, from the container for exec plans.
+
+    full/core write .env root-owned 0600 *inside* the container, so a host user
+    (non-root on Ubuntu/runpod/vast; UID-namespaced on Mac/Win) can't read it.
+    docker-exec plans (base == ["docker"]) cat it from the API container; split
+    reads the user-owned host file directly.
+    """
+    if plan is not None and plan.base == ["docker"]:
+        rc, out = run_quiet(
+            ["docker", "exec", plan.api_svc, "cat", "/workspace/.env"], timeout=10
+        )
+        if rc != 0:
+            return {}
+        result: dict[str, str] = {}
+        for line in out.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            result[key.strip()] = value.strip()
+        return result
+    return read_env(env_file)
+
+
 def _super_admin_exists(plan: "_BootstrapPlan", env_data: dict) -> bool:
     """True if a super_admin user is already in the DB — the bootstrap gate."""
     pg_user = env_data.get("POSTGRES_USER", "postgres")
@@ -1034,7 +1072,7 @@ def _bootstrap_first_admin(
 ) -> bool:
     """First-boot super admin + default org admin. Idempotent."""
     # Skip if a super_admin already exists.
-    env_data = read_env(env_file)
+    env_data = _read_env_for_bootstrap(env_file, plan)
     check_plan = plan or _split_plan(env_file, env_data)
     if _super_admin_exists(check_plan, env_data):
         return True
@@ -1078,9 +1116,9 @@ def _bootstrap_first_admin(
         default_admin_password = _prompt_password("admin password")
 
     # Prompt for entitlement token; _create_admin_direct reads it from env.
-    if not os.environ.get("SHS_ENTITLEMENT_TOKEN") and not read_env(env_file).get(
-        "SHS_ENTITLEMENT_TOKEN"
-    ):
+    if not os.environ.get("SHS_ENTITLEMENT_TOKEN") and not _read_env_for_bootstrap(
+        env_file, plan
+    ).get("SHS_ENTITLEMENT_TOKEN"):
         print()
         info("Entitlement token (unlocks plus features — leave blank to skip)")
         token = _prompt("Entitlement token", "").strip()
@@ -1133,7 +1171,7 @@ def _create_admin_direct(
     """Create super admin: hash via API container, insert via psql."""
     import uuid
 
-    env_data = read_env(env_file)
+    env_data = _read_env_for_bootstrap(env_file, plan)
     plan = plan or _split_plan(env_file, env_data)
     base = plan.base
     pg_user = env_data.get("POSTGRES_USER", "postgres")
@@ -1309,7 +1347,7 @@ def _create_default_org_admin(
     """Create the 'default' org (is_staging=TRUE) and its immutable 'admin' user."""
     import uuid
 
-    env_data = read_env(env_file)
+    env_data = _read_env_for_bootstrap(env_file, plan)
     plan = plan or _split_plan(env_file, env_data)
     base = plan.base
     pg_user = env_data.get("POSTGRES_USER", "postgres")
