@@ -15,10 +15,19 @@ from .commands import (
     cmd_restart,
     cmd_show_config,
 )
-from .env import detect_shape, promote_runpod_secrets, read_env, set_env_value
+from .env import (
+    derive_url_vars,
+    detect_shape,
+    promote_runpod_secrets,
+    read_env,
+    run_quiet,
+    set_env_value,
+)
 from .tui import (
     NavBack,
     NavExit,
+    _bold,
+    _cyan,
     _dim,
     _interactive_single,
     _prompt,
@@ -179,8 +188,6 @@ def _kick_cloudflared(env_file: Path) -> None:
     """Start cloudflared and restart UI so __env.js picks up new public URLs."""
     import time
 
-    from .env import ok, run_quiet
-
     token = read_env(env_file).get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
     if not token:
         return
@@ -227,34 +234,39 @@ def _kick_cloudflared(env_file: Path) -> None:
 def _sync_derived_urls(env_file: Path) -> None:
     """Recompute API/WS/frontend/CORS after public_domain changes."""
     env_data = read_env(env_file)
-    public_url = env_data.get("SHS_PUBLIC_BASE_URL", "").strip()
-    api_public_url = env_data.get("CONSOLE_PUBLIC_API_BASE_URL", "").strip()
-    nginx_port = env_data.get("SHS_NGINX_PORT", "80")
+    urls = derive_url_vars(
+        env_data.get("SHS_PUBLIC_BASE_URL", ""),
+        env_data.get("CONSOLE_PUBLIC_API_BASE_URL", ""),
+        env_data.get("SHS_NGINX_PORT", "80"),
+    )
+    for key, value in urls.items():
+        set_env_value(env_file, key, value)
 
-    has_public = public_url.startswith("https://")
-    localhost_origins = "http://localhost" if nginx_port == "80" else f"http://localhost:{nginx_port}"
 
-    if has_public:
-        api_host = api_public_url if api_public_url.startswith("https://") else public_url
-        api_url = api_host
-        ws_url = api_host.replace("https://", "wss://")
-        frontend_url = public_url
-        origins = [localhost_origins, public_url]
-        if api_public_url and api_public_url != public_url:
-            origins.append(api_public_url)
-        cors_origins = ",".join(origins)
-    else:
-        nginx_base = f"http://localhost:{nginx_port}"
-        api_url = nginx_base
-        ws_url = f"ws://localhost:{nginx_port}"
-        frontend_url = nginx_base
-        cors_origins = localhost_origins
+def _cloudflared_state() -> str:
+    """Live cloudflared process state from supervisord (not marker/wizard state)."""
+    _, out = run_quiet(["supervisorctl", "status", "cloudflared"], timeout=10)
+    parts = out.split()
+    return parts[1] if len(parts) >= 2 else ""
 
-    set_env_value(env_file, "SHS_API_BASE_URL", api_url)
-    set_env_value(env_file, "SHS_PUBLIC_API_URL", api_url)
-    set_env_value(env_file, "SHS_WS_URL", ws_url)
-    set_env_value(env_file, "SHS_FRONTEND_URL", frontend_url)
-    set_env_value(env_file, "SHS_CORS_ORIGINS", cors_origins)
+
+def _print_cf_status(env_data: dict) -> None:
+    """Render tunnel + runtime state, sourced only from .env and supervisord."""
+    token = env_data.get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
+    domain = env_data.get("SHS_PUBLIC_BASE_URL", "").strip()
+    if not token:
+        print(f"  {_dim('Tunnel:')} not configured")
+        return
+    state = _cloudflared_state()
+    label = {
+        "RUNNING": _cyan("running"),
+        "STOPPED": _dim("stopped"),
+        "STARTING": _dim("starting"),
+    }.get(state, _bold(f"{state or 'unknown'} — check: supervisorctl tail cloudflared stderr"))
+    print(f"  {_dim('Tunnel:')} token set · cloudflared {label}")
+    if domain:
+        print(f"  {_dim('Domain:')} {domain}")
+    print()
 
 
 def _cloudflare_menu(env_file: Path) -> None:
@@ -264,6 +276,7 @@ def _cloudflare_menu(env_file: Path) -> None:
         return
 
     env_data = read_env(env_file)
+    _print_cf_status(env_data)
     has_tunnel = bool(env_data.get("CLOUDFLARE_TUNNEL_ID"))
 
     options = [

@@ -184,6 +184,39 @@ def read_env(path: Path) -> dict[str, str]:
     return result
 
 
+def derive_url_vars(
+    public_url: str, api_public_url: str = "", nginx_port: str = "80"
+) -> dict[str, str]:
+    """Derive the five browser/SSR/CORS URL vars from a public domain."""
+    public_url = public_url.strip()
+    api_public_url = api_public_url.strip()
+    localhost_origins = "http://localhost" if nginx_port == "80" else f"http://localhost:{nginx_port}"
+
+    if public_url.startswith("https://"):
+        api_host = api_public_url if api_public_url.startswith("https://") else public_url
+        api_url = api_host
+        ws_url = api_host.replace("https://", "wss://")
+        frontend_url = public_url
+        origins = [localhost_origins, public_url]
+        if api_public_url and api_public_url != public_url:
+            origins.append(api_public_url)
+        cors_origins = ",".join(origins)
+    else:
+        nginx_base = f"http://localhost:{nginx_port}"
+        api_url = nginx_base
+        ws_url = f"ws://localhost:{nginx_port}"
+        frontend_url = nginx_base
+        cors_origins = localhost_origins
+
+    return {
+        "SHS_API_BASE_URL": api_url,
+        "SHS_PUBLIC_API_URL": api_url,
+        "SHS_WS_URL": ws_url,
+        "SHS_FRONTEND_URL": frontend_url,
+        "SHS_CORS_ORIGINS": cors_origins,
+    }
+
+
 def write_env(path: Path, data: dict[str, str]) -> None:
     """Atomic write of a .env file, preserving comments from existing file."""
     path.parent.mkdir(parents=True, exist_ok=True)

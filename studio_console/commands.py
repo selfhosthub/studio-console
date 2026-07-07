@@ -1044,6 +1044,24 @@ def _read_env_for_bootstrap(env_file: Path, plan: "_BootstrapPlan | None") -> di
     return read_env(env_file)
 
 
+def _unset_env_for_bootstrap(
+    env_file: Path, keys: list[str], plan: "_BootstrapPlan | None"
+) -> None:
+    """Strip keys from .env, inside the container for exec plans (root-owned file)."""
+    if plan is not None and plan.base == ["docker"]:
+        pattern = "|".join(k for k in keys)
+        run_quiet(
+            [
+                "docker", "exec", plan.api_svc, "sh", "-c",
+                f"grep -Ev '^({pattern})=' /workspace/.env > /workspace/.env.tmp "
+                f"&& mv /workspace/.env.tmp /workspace/.env && chmod 0600 /workspace/.env",
+            ],
+            timeout=10,
+        )
+        return
+    unset_env_values(env_file, keys)
+
+
 def _super_admin_exists(plan: "_BootstrapPlan", env_data: dict) -> bool:
     """True if a super_admin user is already in the DB — the bootstrap gate."""
     pg_user = env_data.get("POSTGRES_USER", "postgres")
@@ -1150,7 +1168,7 @@ def _bootstrap_first_admin(
 
     if super_admin_ok and org_admin_ok:
         # Strip transient bootstrap inputs from .env.
-        unset_env_values(
+        _unset_env_for_bootstrap(
             env_file,
             [
                 "SHS_ADMIN_EMAIL",
@@ -1159,6 +1177,7 @@ def _bootstrap_first_admin(
                 "CONSOLE_DEFAULT_ADMIN_PASSWORD",
                 "SHS_ENTITLEMENT_TOKEN",
             ],
+            plan,
         )
         return True
     warn("Bootstrap incomplete — will retry account creation on next start.")

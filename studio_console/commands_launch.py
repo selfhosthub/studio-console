@@ -121,7 +121,10 @@ def _ensure_creds(
         name = entry["name"]
         if state.get(name):
             continue
-        if entry.get("secret"):
+        env_val = os.environ.get(name, "").strip()
+        if env_val:
+            state[name] = env_val
+        elif entry.get("secret"):
             state[name] = _prompt_password(entry.get("description", name).split(".")[0])
         else:
             state[name] = _prompt(f"{name}")
@@ -140,6 +143,67 @@ def _ensure_workspace(workspace: Path) -> None:
     os.chmod(workspace, 0o711)
 
 
+# Non-secret config injected from host env via -e on first boot only; not
+# re-injected on relaunch, so operator-tuned values are not clobbered.
+_FIRST_BOOT_SEED_VARS = [
+    "SHS_GENERAL_WORKERS",
+    "SHS_TRANSFER_WORKERS",
+]
+
+# Container path the entrypoint reads the tunnel token from (consumed_secret_files
+# in the launch manifest). Must match studio-app's entrypoint exactly.
+CF_TOKEN_MOUNT = "/run/secrets/cf-token"
+
+
+def _seed_first_boot_vars(workspace: Path, creds: dict) -> None:
+    """Inject worker counts and derived public-URL vars from host env, first boot only."""
+    if (workspace / ".env").exists():
+        for name in _FIRST_BOOT_SEED_VARS:
+            if os.environ.get(name, "").strip():
+                info(f"{name}: kept existing.")
+        if os.environ.get("SHS_PUBLIC_BASE_URL", "").strip():
+            info("public URLs: kept existing.")
+        return
+    for name in _FIRST_BOOT_SEED_VARS:
+        val = os.environ.get(name, "").strip()
+        if val:
+            creds[name] = val
+            info(f"seeded {name} (first boot).")
+    public_url = os.environ.get("SHS_PUBLIC_BASE_URL", "").strip()
+    if public_url:
+        from .env import derive_url_vars
+
+        # Only the browser bundle vars; SHS_API_BASE_URL/CORS are excluded so SSR
+        # stays on the in-container API and nginx single-origin CORS is untouched.
+        urls = derive_url_vars(
+            public_url,
+            os.environ.get("CONSOLE_PUBLIC_API_BASE_URL", ""),
+            os.environ.get("SHS_NGINX_PORT", "80"),
+        )
+        creds["SHS_PUBLIC_BASE_URL"] = public_url
+        for key in ("SHS_PUBLIC_API_URL", "SHS_WS_URL", "SHS_FRONTEND_URL"):
+            creds[key] = urls[key]
+        info("seeded public URLs (first boot).")
+
+
+def _cf_token_mount(workspace: Path, state_dir: Path) -> Path | None:
+    """Write the token to a 0600 host file, return its path; None if no token or on relaunch."""
+    token_file = state_dir / ".cf-token"
+    token_file.unlink(missing_ok=True)
+    token = os.environ.get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
+    if not token:
+        return None
+    if (workspace / ".env").exists():
+        info("CLOUDFLARE_TUNNEL_TOKEN: kept existing.")
+        return None
+    state_dir.mkdir(mode=0o700, exist_ok=True)
+    fd = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.write(fd, token.encode())
+    os.close(fd)
+    info("cf-token: dropped (reason=first-boot).")
+    return token_file
+
+
 def _build_run_cmd(
     manifest: dict,
     image_ref: str,
@@ -148,11 +212,13 @@ def _build_run_cmd(
     container_name: str = CONTAINER_NAME,
     network: str | None = None,
     publish_internal: bool = True,
+    mounts: list[str] | None = None,
 ) -> list[str]:
     """Assemble `docker run` from the manifest.
 
     *publish_internal* False publishes only ports without ``internal: true``
     (core: expose nginx :80, keep api/ui/supervisor off the host).
+    *mounts* are extra ``-v`` specs (e.g. the consumed cf-token secret file).
     """
     cmd = ["docker", "run", "-d", "--name", container_name]
     if network:
@@ -164,6 +230,8 @@ def _build_run_cmd(
         cmd += ["-p", f"{c}:{c}"]
     vol = manifest["volumes"][0]["container_path"]
     cmd += ["-v", f"{workspace}:{vol}"]
+    for spec in mounts or []:
+        cmd += ["-v", spec]
     for name, value in creds.items():
         cmd += ["-e", f"{name}={value}"]
     cmd.append(image_ref)
@@ -197,7 +265,10 @@ def cmd_launch_full(context: str, tag: str | None = None, workspace: Path | None
     _ensure_workspace(workspace)
 
     creds = _ensure_creds(manifest)
-    cmd = _build_run_cmd(manifest, image_ref, creds, workspace)
+    _seed_first_boot_vars(workspace, creds)
+    cf_token = _cf_token_mount(workspace, STATE_DIR)
+    mounts = [f"{cf_token}:{CF_TOKEN_MOUNT}:ro"] if cf_token else None
+    cmd = _build_run_cmd(manifest, image_ref, creds, workspace, mounts=mounts)
 
     info(f"Starting {image_ref} (data: {workspace}) ...")
     if run(cmd, check=False).returncode != 0:
@@ -394,10 +465,9 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
         return False  # deferred or aborted
     creds["SHS_DATABASE_URL"] = db_url
 
-    # Console injects ONLY the DB URL (+ supervisor creds). Core's entrypoint now
-    # writes SHS_NGINX_PORT / CORS / PUBLIC_BASE_URL / WORKSPACE_ROOT to .env on
-    # first boot, symmetric with full — so the Cloudflare domain saved there
-    # survives relaunch instead of being clobbered by an -e override.
+    _seed_first_boot_vars(workspace, creds)
+    cf_token = _cf_token_mount(workspace, CORE_STATE_DIR)
+    mounts = [f"{cf_token}:{CF_TOKEN_MOUNT}:ro"] if cf_token else None
 
     # If the sidecar is on the core network, core must join it to reach the DB.
     network = CORE_NETWORK if _sidecar_running() else None
@@ -406,6 +476,7 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
         container_name=CORE_CONTAINER_NAME,
         network=network,
         publish_internal=False,
+        mounts=mounts,
     )
 
     info(f"Starting {image_ref} (data: {workspace}) ...")
