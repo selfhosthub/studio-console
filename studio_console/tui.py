@@ -369,8 +369,9 @@ def _fallback_single(prompt: str, options: list[str], default: int = 0) -> int:
 def _prompt(prompt: str, default: str = "") -> str:
     """Text prompt with optional default."""
     suffix = f" [{default}]" if default else ""
+    # No color: readline renders raw SGR literally on dumb terminals.
     try:
-        answer = input(f"{_cyan('▸')} {prompt}{suffix}: ").strip()
+        answer = input(f"▸ {prompt}{suffix}: ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         raise KeyboardInterrupt
@@ -390,7 +391,7 @@ def _prompt_password(prompt: str) -> str:
     print()
     while True:
         try:
-            pw = getpass.getpass(f"{_cyan('▸')} {prompt}: ")
+            pw = getpass.getpass(f"▸ {prompt}: ")
         except (EOFError, KeyboardInterrupt):
             print()
             raise KeyboardInterrupt
@@ -401,7 +402,7 @@ def _prompt_password(prompt: str) -> str:
             print(f"  {_red('✗')} {msg}")
             continue
         try:
-            pw2 = getpass.getpass(f"{_cyan('▸')} Confirm password: ")
+            pw2 = getpass.getpass(f"▸ Confirm password: ")
         except (EOFError, KeyboardInterrupt):
             print()
             raise KeyboardInterrupt

@@ -659,7 +659,7 @@ def _submenu_cloudflare(context: str, env_file: Path) -> None:
         import getpass
 
         try:
-            new_token = getpass.getpass(f"{_cyan('▸')} New tunnel token: ").strip()
+            new_token = getpass.getpass(f"▸ New tunnel token: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return

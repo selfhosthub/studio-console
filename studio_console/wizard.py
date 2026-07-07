@@ -957,7 +957,7 @@ def _section_community(state: SetupState) -> None:
         import getpass
 
         try:
-            token = getpass.getpass(f"{_cyan('▸')} Entitlement Token: ").strip()
+            token = getpass.getpass(f"▸ Entitlement Token: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             raise KeyboardInterrupt

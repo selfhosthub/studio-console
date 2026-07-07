@@ -45,21 +45,12 @@ _NON_INTERACTIVE = False
 
 
 def _ingress_target(env_file: Path, hostname: str = "") -> str:
-    """Tunnel ingress target for a hostname.
-
-    Split: every hostname → http://nginx:port (nginx routes internally).
-    Core/Full: API hostname → localhost:8000, UI hostname → localhost:3000.
-    """
-    shape = detect_shape(env_file)
-    if shape in ("core", "full"):
-        env_data = read_env(env_file)
-        api_url = env_data.get("CONSOLE_PUBLIC_API_BASE_URL", "").rstrip("/")
-        if api_url.startswith("https://"):
-            api_host = api_url[len("https://"):].split("/", 1)[0]
-            if hostname == api_host:
-                return "http://localhost:8000"
-        return "http://localhost:3000"
+    """Tunnel ingress origin. Every shape targets the nginx front door, which
+    path-routes api/ws vs ui. Split: nginx service. Core/full: localhost (nginx
+    shares the container with cloudflared)."""
     nginx_port = read_env(env_file).get("SHS_NGINX_PORT", "80")
+    if detect_shape(env_file) in ("core", "full"):
+        return f"http://localhost:{nginx_port}"
     return f"http://nginx:{nginx_port}"
 
 
@@ -266,7 +257,7 @@ def _step_token(env_file: Path) -> CloudflareAPI | None:
             return None
 
         try:
-            token = getpass.getpass(f"{_cyan('▸')} Cloudflare API token: ").strip()
+            token = getpass.getpass(f"▸ Cloudflare API token: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return None
@@ -554,8 +545,8 @@ def _step_routes(
 ) -> list[str] | None:
     """Configure tunnel ingress rules and DNS records for one or more hostnames.
 
-    nginx is the sole entry point — every public hostname maps to nginx:port and
-    nginx splits internally by server_name and path.
+    nginx is the sole entry point — every public hostname maps to the nginx
+    front door and nginx splits internally by path.
     """
     print()
     ingress: list[dict] = [
