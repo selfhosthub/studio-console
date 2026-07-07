@@ -68,7 +68,10 @@ def _load_api(env_file: Path) -> CloudflareAPI | None:
     token = env_data.get("CLOUDFLARE_API_TOKEN", "")
     account_id = env_data.get("CLOUDFLARE_ACCOUNT_ID", "")
     if not token:
-        return None
+        if _is_non_interactive():
+            return None
+        info("No Cloudflare API token configured — let's set one up.")
+        return _step_token(env_file)
     return CloudflareAPI(token, account_id)
 
 
@@ -812,6 +815,26 @@ def _remove_ip_policy(cf: CloudflareAPI, app_id: str, role: str) -> None:
             return
 
 
+def _prompt_ip_restrict_mode(current: str, is_split: bool) -> str:
+    """Ask which roles to gate by IP. Returns 'none', 'ui', or 'both'."""
+    if _is_non_interactive():
+        return current
+    both_label = "UI + API" if is_split else "UI"
+    modes = ["none", "ui", "both"] if is_split else ["none", "both"]
+    labels = (
+        [
+            "None — public, no IP gating",
+            "UI only — gate UI, leave API public",
+            f"{both_label} — gate all hostnames",
+        ]
+        if is_split
+        else ["None — public, no IP gating", f"{both_label} — gate with IP bypass"]
+    )
+    default = modes.index(current) if current in modes else 0
+    idx = _interactive_single("Restrict access by IP?", labels, default=default)
+    return modes[idx]
+
+
 def _step_ip_policy(
     cf: CloudflareAPI,
     env_file: Path,
@@ -941,7 +964,7 @@ def update_ip_rules(env_file: Path) -> None:
     """
     cf = _load_api(env_file)
     if not cf:
-        warn("No Cloudflare API token configured. Run 'Full setup (API)' first.")
+        warn("Cloudflare API token required — cannot update IP rules.")
         return
 
     env_data = read_env(env_file)
@@ -1205,7 +1228,7 @@ def update_domain(env_file: Path) -> None:
     """Change one or both public domains — updates DNS, Access apps, and ingress."""
     cf = _load_api(env_file)
     if not cf:
-        warn("No Cloudflare API token configured. Run 'Full setup (API)' first.")
+        warn("Cloudflare API token required — cannot update domain.")
         return
 
     env_data = read_env(env_file)
@@ -1438,8 +1461,10 @@ def _cf_full_setup_impl(env_file: Path) -> bool:
             "DNS for it must be set up separately."
         )
 
-    # Decide which roles will be gated so preflight can check for conflicting
-    # Access apps before we create anything.
+    # Ask which roles to gate by IP. Default to the stored mode; interactive so a
+    # stale "none" can't silently skip Access-app creation.
+    ip_mode = _prompt_ip_restrict_mode(ip_mode, is_split)
+    set_env_value(env_file, "CONSOLE_IP_RESTRICT_MODE", ip_mode)
     if ip_mode == "both":
         gated_roles = ["ui", "api"] if is_split else ["ui"]
     elif ip_mode == "ui":
