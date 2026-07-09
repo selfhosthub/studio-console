@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from .cloudflare.cf_wizard import update_domain, update_ip_rules
@@ -29,7 +30,9 @@ from .tui import (
     _bold,
     _cyan,
     _dim,
+    _red,
     _interactive_single,
+    _interactive_yn,
     _prompt,
     error,
     heading,
@@ -92,7 +95,7 @@ def container_menu(context: str, env_file: Path) -> None:
                 else:
                     cmd_show_config(context, env_file)
             elif action == "workers":
-                _cmd_workers(env_file)
+                _cmd_workers()
             elif action == "backup":
                 _submenu_backup(context, env_file)
             elif action == "cloudflare":
@@ -115,6 +118,56 @@ _WORKER_GROUPS: list[tuple[str, str]] = [
     ("worker-transfer", "SHS_TRANSFER_WORKERS"),
 ]
 
+# Supervisor conf fragment per worker group. A literal numprocs can be rescaled
+# in place; an %(ENV_...)s one needs a container restart to re-source .env.
+_WORKER_CONF = {
+    "worker-general": "/etc/supervisor/conf.d/worker-general.conf",
+    "worker-transfer": "/etc/supervisor/conf.d/worker-transfer.conf",
+}
+_NUMPROCS_RE = re.compile(r"^numprocs=(.*)$", re.MULTILINE)
+
+
+def _fragment_is_literal(group: str) -> bool | None:
+    """True if numprocs is a literal, False if env-expanded, None if unreadable."""
+    try:
+        text = Path(_WORKER_CONF[group]).read_text()
+    except OSError:
+        return None
+    m = _NUMPROCS_RE.search(text)
+    if not m:
+        return None
+    return m.group(1).strip().isdigit()
+
+
+def _configured_numprocs(group: str) -> str | None:
+    """The literal numprocs from the conf fragment (the source of truth), or
+    None if unreadable/env-expanded."""
+    try:
+        text = Path(_WORKER_CONF[group]).read_text()
+    except OSError:
+        return None
+    m = _NUMPROCS_RE.search(text)
+    if m and m.group(1).strip().isdigit():
+        return m.group(1).strip()
+    return None
+
+
+def _rewrite_numprocs(group: str, count: int) -> bool:
+    """Rewrite the numprocs= line in place, preserving the fragment's mode/owner."""
+    path = Path(_WORKER_CONF[group])
+    try:
+        text = path.read_text()
+    except OSError:
+        return False
+    new_text, n = _NUMPROCS_RE.subn(f"numprocs={count}", text)
+    if n != 1:
+        return False
+    try:
+        path.write_text(new_text)
+    except OSError:
+        return False
+    return True
+
 
 def _running_proc_count(status_out: str, group: str) -> int:
     """Count RUNNING procs in a supervisord process group.
@@ -133,36 +186,77 @@ def _running_proc_count(status_out: str, group: str) -> int:
     return count
 
 
-def _cmd_workers(env_file: Path) -> None:
-    """View and set general/transfer worker counts (applies on container restart).
-
-    numprocs is parse-time and read from supervisord's PID-1 environment, frozen
-    at boot by the entrypoint. We can only write /workspace/.env; the new count
-    takes effect when the container restarts and PID 1 re-sources .env. The
-    in-container console cannot restart its own container (it is a child of the
-    supervisord it would kill), so we write the value and print the restart command.
-    """
+def _apply_worker_numprocs(group: str, count: int) -> None:
+    """Rescale a group in place (rewrite fragment + reread/update + verify), or
+    fall back to the container-restart notice when the fragment is env-expanded."""
     from .env import run_quiet
 
-    if not env_file.exists():
-        error(f"No .env at {env_file} — entrypoint hasn't run.")
+    if _fragment_is_literal(group) is not True:
+        _print_container_restart_notice()
         return
 
-    env_data = read_env(env_file)
+    if not _rewrite_numprocs(group, count):
+        error(f"{group}: could not update {_WORKER_CONF[group]} — skipped.")
+        _print_container_restart_notice()
+        return
+
+    run_quiet(["supervisorctl", "reread"], timeout=15)
+    run_quiet(["supervisorctl", "update"], timeout=30)
+
+    # New procs pass through STARTING (startsecs) before RUNNING — poll briefly.
+    running = _poll_worker_count(group, count)
+    if running == count:
+        ok(f"{group}: now {count}")
+    else:
+        error(
+            f"{group}: expected {count} but {running} running after reread/update — "
+            f"check `supervisorctl status` and {_WORKER_CONF[group]}."
+        )
+
+
+def _poll_worker_count(group: str, target: int, timeout: float = 12.0) -> int:
+    """Poll supervisorctl until the group's RUNNING count hits target or timeout."""
+    import time
+
+    from .env import run_quiet
+
+    deadline = time.monotonic() + timeout
+    running = -1
+    while True:
+        _, status_out = run_quiet(["supervisorctl", "status"], timeout=10)
+        running = _running_proc_count(status_out, group)
+        if running == target or time.monotonic() >= deadline:
+            return running
+        time.sleep(1)
+
+
+def _print_container_restart_notice() -> None:
+    container = os.environ.get("HOSTNAME", "").strip() or "<container>"
+    print(f"  {_red('Restart the whole container to apply — the count is frozen at boot.')}")
+    print(f"  {_red('Any in-flight jobs on these workers will be dropped.')}")
+    print(f"  {_red('From the host (or the RunPod pod controls):')} {_red(_bold(f'docker restart {container}'))}")
+
+
+def _cmd_workers() -> None:
+    """View and set general/transfer worker counts. The conf fragment's literal
+    numprocs is the source of truth; applies in place via reread/update when
+    supported, else prints the container-restart notice."""
+    from .env import run_quiet
+
     _, status_out = run_quiet(["supervisorctl", "status"], timeout=10)
 
     heading("Workers")
     print(f"  {'worker':<16}{'configured':<12}{'running'}")
-    for group, var in _WORKER_GROUPS:
-        configured = env_data.get(var, "1")
+    for group, _var in _WORKER_GROUPS:
+        configured = _configured_numprocs(group) or "?"
         running = _running_proc_count(status_out, group)
         note = "  (restart to apply)" if str(running) != configured else ""
         print(f"  {group:<16}{configured:<12}{running}{_dim(note)}")
     print()
 
-    changed = False
-    for group, var in _WORKER_GROUPS:
-        current = env_data.get(var, "1")
+    pending: list[tuple[str, int]] = []
+    for group, _var in _WORKER_GROUPS:
+        current = _configured_numprocs(group) or "1"
         raw = _prompt(f"{group} count", current)
         if raw == current:
             continue
@@ -173,15 +267,21 @@ def _cmd_workers(env_file: Path) -> None:
         except ValueError:
             error(f"{group}: '{raw}' is not a non-negative integer — skipped.")
             continue
-        set_env_value(env_file, var, str(count))
-        changed = True
+        pending.append((group, count))
 
-    if not changed:
+    if not pending:
         return
 
-    container = os.environ.get("HOSTNAME", "").strip() or "<container>"
-    ok("Saved.")
-    print(f"  Restart to apply:  {_dim(f'docker restart {container}')}")
+    if not _interactive_yn(
+        "Apply now? in-flight jobs on removed workers will be dropped.",
+        default=True,
+        nav=False,
+    ):
+        print(_dim("  No change — worker counts persist in each conf fragment."))
+        return
+
+    for group, count in pending:
+        _apply_worker_numprocs(group, count)
 
 
 def _kick_cloudflared(env_file: Path) -> None:
