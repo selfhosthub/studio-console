@@ -15,6 +15,11 @@ ALL_COMPONENTS = [
 
 CORE_DEFAULTS = {"PostgreSQL", "API", "UI"}
 
+# Restricted runtime DB role (RLS cutover). The API's bootstrap provisions it
+# from SHS_DATABASE_APP_URL's credentials on every boot — console only names
+# it and supplies the URL; it never runs role/grant SQL itself.
+APP_DB_ROLE = "shs_app"
+
 # ---------------------------------------------------------------------------
 # Component → compose profile mapping
 # ---------------------------------------------------------------------------
@@ -105,6 +110,7 @@ ENV_SECTIONS = {
     ],
     "Database": [
         "SHS_DATABASE_URL",
+        "SHS_DATABASE_APP_URL",
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
         "POSTGRES_PORT",

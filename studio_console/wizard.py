@@ -15,6 +15,7 @@ from .constants import (
 )
 from .env import (
     _package_root,
+    derive_app_db_url,
     detect_context,
     read_env,
     run_quiet,
@@ -1536,6 +1537,7 @@ def wizard(context: str, env_file: Path) -> bool:
         cors_origins = localhost_origins
 
     # -- Build .env --
+    db_url = f"postgresql+asyncpg://postgres:{state.postgres_password}@postgres:5432/selfhost_studio"
     env_data: dict[str, str] = {
         # Project
         "COMPOSE_PROJECT_NAME": "studio",
@@ -1557,8 +1559,12 @@ def wizard(context: str, env_file: Path) -> bool:
         "SHS_WS_URL": ws_url,
         "SHS_FRONTEND_URL": frontend_url,
         "SHS_CORS_ORIGINS": cors_origins,
-        # Database
-        "SHS_DATABASE_URL": f"postgresql+asyncpg://postgres:{state.postgres_password}@postgres:5432/selfhost_studio",
+        # Database. The app URL opts the API into the restricted shs_app role
+        # (RLS enforced); bootstrap provisions it on boot. Preserved across
+        # wizard reruns so the password stays stable.
+        "SHS_DATABASE_URL": db_url,
+        "SHS_DATABASE_APP_URL": state.existing.get("SHS_DATABASE_APP_URL", "")
+            or derive_app_db_url(db_url),
         "POSTGRES_USER": "postgres",
         "POSTGRES_PASSWORD": state.postgres_password,
         "POSTGRES_PORT": "5432",
@@ -1846,6 +1852,7 @@ def wizard_non_interactive(context: str, env_file: Path) -> bool:
         cors_origins = localhost_origins
 
     # -- Build .env --
+    db_url = f"postgresql+asyncpg://postgres:{state.postgres_password}@postgres:5432/selfhost_studio"
     env_data: dict[str, str] = {
         "COMPOSE_PROJECT_NAME": "studio",
         "SHS_JWT_SECRET_KEY": state.jwt_secret,
@@ -1860,7 +1867,8 @@ def wizard_non_interactive(context: str, env_file: Path) -> bool:
         "SHS_WS_URL": ws_url,
         "SHS_FRONTEND_URL": frontend_url,
         "SHS_CORS_ORIGINS": cors_origins,
-        "SHS_DATABASE_URL": f"postgresql+asyncpg://postgres:{state.postgres_password}@postgres:5432/selfhost_studio",
+        "SHS_DATABASE_URL": db_url,
+        "SHS_DATABASE_APP_URL": g("SHS_DATABASE_APP_URL", "") or derive_app_db_url(db_url),
         "POSTGRES_USER": "postgres",
         "POSTGRES_PASSWORD": state.postgres_password,
         "POSTGRES_PORT": "5432",

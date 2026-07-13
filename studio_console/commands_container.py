@@ -10,6 +10,7 @@ from pathlib import Path
 from .cloudflare.cf_wizard import update_domain, update_ip_rules
 from .commands import (
     _submenu_backup,
+    cmd_db_role,
     cmd_health,
     cmd_logs,
     cmd_reset_password,
@@ -62,6 +63,7 @@ def container_menu(context: str, env_file: Path) -> None:
         (f"Config          {_dim('show .env (secrets masked)')}", "config"),
     ]
     actions.append((f"Workers         {_dim('scale general / transfer')}", "workers"))
+    actions.append((f"DB role         {_dim('restricted runtime role (RLS)')}", "dbrole"))
     if shape == "full":
         actions.append((f"Backup          {_dim('backup · restore')}", "backup"))
     actions += [
@@ -96,6 +98,8 @@ def container_menu(context: str, env_file: Path) -> None:
                     cmd_show_config(context, env_file)
             elif action == "workers":
                 _cmd_workers()
+            elif action == "dbrole":
+                cmd_db_role(context, env_file)
             elif action == "backup":
                 _submenu_backup(context, env_file)
             elif action == "cloudflare":

@@ -27,6 +27,7 @@ from .env import (
     _validate_env,
     backup_root,
     compose_cmd,
+    derive_app_db_url,
     detect_context,
     env_path,
     fatal,
@@ -507,6 +508,69 @@ def _submenu_backup(context: str, env_file: Path) -> None:
             cmd_restore(context, env_file, path or None, what="orgs")
 
 
+def cmd_db_role(context: str, env_file: Path) -> None:
+    """Show/enable the restricted runtime DB role (shs_app cutover).
+
+    Console only writes SHS_DATABASE_APP_URL — the API's bootstrap provisions
+    the role, grants, and RLS posture from it on every boot. SHS_DATABASE_URL
+    stays privileged; console's own psql/dump/restore tooling keeps using it.
+    """
+    env_data = read_env(env_file)
+
+    if _app_db_url(env_data):
+        ok("Restricted DB role is configured (SHS_DATABASE_APP_URL is set).")
+        info("The API provisions the role and re-applies RLS policies on every boot.")
+        info("Check Services → Health for the live posture.")
+        return
+
+    db_url = env_data.get("SHS_DATABASE_URL", "") or os.environ.get(
+        "SHS_DATABASE_URL", ""
+    )
+    if not db_url:
+        error("No SHS_DATABASE_URL found — configure the database first.")
+        return
+
+    warn_header("The API currently connects as the privileged DB role — RLS is inert")
+    info("Enabling writes SHS_DATABASE_APP_URL (role shs_app) next to SHS_DATABASE_URL.")
+    info("The API provisions the role itself on next boot; console runs no SQL.")
+    info(_dim("Requires a studio image with restricted-role support; older images ignore it."))
+    if not _owns_postgres(env_data):
+        warn(
+            "External database: the SHS_DATABASE_URL role must have CREATEROLE, "
+            "or the API's boot fails closed while provisioning shs_app."
+        )
+    print()
+
+    if not _interactive_yn("Enable the restricted DB role?", default=False):
+        info("Skipped — no changes made.")
+        return
+
+    set_env_value(env_file, "SHS_DATABASE_APP_URL", derive_app_db_url(db_url))
+    ok("SHS_DATABASE_APP_URL written to .env")
+
+    if context == "host":
+        env_data = read_env(env_file)
+        if _interactive_yn(
+            "Apply now? Restarts services so the API boots on the restricted role.",
+            default=True,
+        ):
+            run(
+                _apply_scale_flags(
+                    compose_cmd(env_file) + ["up", "-d", "--remove-orphans"], env_data
+                ),
+                timeout=120,
+            )
+            ok("Services restarted — check Services → Health for the RLS posture.")
+        else:
+            info("Takes effect on the next restart of the API.")
+    else:
+        warn(
+            "Restart this container from the host to apply — provisioning runs in "
+            "the container entrypoint, not under supervisord."
+        )
+        print(f"    {_bold('docker restart <container>')}   {_dim('(or stop/start the pod on RunPod)')}")
+
+
 def _submenu_advanced(context: str, env_file: Path) -> None:
     """Advanced submenu — scale API/UI, per-service ops, Cloudflare ops."""
     options = [
@@ -515,6 +579,7 @@ def _submenu_advanced(context: str, env_file: Path) -> None:
         f"Stop one          {_dim('stop a running service')}",
         f"Restart one       {_dim('restart a single service')}",
         f"Show .env         {_dim('current configuration values')}",
+        f"DB role           {_dim('restricted runtime role (RLS) — status · enable')}",
         f"Cloudflare        {_dim('tunnel · routes · IP rules · Access')}",
     ]
     idx = _interactive_single("Advanced", options, default=0)
@@ -539,6 +604,8 @@ def _submenu_advanced(context: str, env_file: Path) -> None:
     elif idx == 4:
         cmd_show_config(context, env_file)
     elif idx == 5:
+        cmd_db_role(context, env_file)
+    elif idx == 6:
         _submenu_cloudflare(context, env_file)
 
 
@@ -1494,6 +1561,34 @@ def cmd_restart(context: str, env_file: Path, service: str | None) -> None:
             ok("All services restarted")
 
 
+def _app_db_url(env_data: dict) -> str:
+    """The restricted-role URL, from .env or process env (process env wins)."""
+    return os.environ.get("SHS_DATABASE_APP_URL", "") or env_data.get(
+        "SHS_DATABASE_APP_URL", ""
+    )
+
+
+def _print_db_role_posture(env_data: dict, api_up: bool) -> None:
+    """One-line RLS posture. A healthy API with the app URL set proves
+    restricted mode — boot is fail-closed on an RLS-inert role."""
+    if _app_db_url(env_data):
+        if api_up:
+            print(
+                f"  {'DB role':24s} {_green('restricted')}  "
+                f"{_dim('RLS enforced (shs_app)')}"
+            )
+        else:
+            print(
+                f"  {'DB role':24s} {_yellow('restricted (configured)')}  "
+                f"{_dim('API down — an RlsInertError in its logs means SHS_DATABASE_APP_URL is misconfigured')}"
+            )
+    else:
+        print(
+            f"  {'DB role':24s} {_yellow('privileged')}  "
+            f"{_dim('RLS inert, app-layer checks only — enable via the DB role menu')}"
+        )
+
+
 def cmd_health(context: str, env_file: Path) -> None:
     """Check health of API and workers."""
     env_data = read_env(env_file)
@@ -1510,6 +1605,7 @@ def cmd_health(context: str, env_file: Path) -> None:
             ["curl", "-sf", f"http://localhost:{nginx_port}/nginx-health"]
         )
         print(f"  {'nginx':24s} {_green('UP') if rc_ng == 0 else _red('DOWN')}")
+        _print_db_role_posture(env_data, api_up=rc == 0)
 
         # If the API is down, distinguish "guardrail tripped" from "unknown" so
         # the operator isn't told to "just check logs" when the cause is known.
@@ -1530,6 +1626,7 @@ def cmd_health(context: str, env_file: Path) -> None:
         print(f"\n{_bold('Health:')}")
         rc, _ = run_quiet(["curl", "-sf", f"{api_base}/health"])
         print(f"  {'API':24s} {_green('UP') if rc == 0 else _red('DOWN')}")
+        _print_db_role_posture(env_data, api_up=rc == 0)
 
     # Container/supervisor status
     if context == "host":
@@ -2425,6 +2522,23 @@ def cmd_restore_db(
             timeout=120,
         )
         ok("API/UI restarted")
+        if _app_db_url(env_data2):
+            info(
+                "Grants and RLS policies for the restricted role re-apply during "
+                "boot; requests may fail with sanitized 500s until it finishes."
+            )
+    else:
+        # Provisioning/grants/RLS re-apply in the container ENTRYPOINT, so the
+        # restore flow ends with a container restart — supervisorctl restart
+        # is not enough. Until then the restricted role authenticates but every
+        # table access is permission-denied → sanitized 500s (fail-closed).
+        warn("Restart this container from the host now to finish the restore.")
+        print(f"    {_bold('docker restart <container>')}   {_dim('(or stop/start the pod on RunPod)')}")
+        if _app_db_url(env_data):
+            warn(
+                "Until the restart, API requests fail with sanitized 500s — "
+                "the restore dropped the restricted role's grants; boot re-applies them."
+            )
 
     return True
 

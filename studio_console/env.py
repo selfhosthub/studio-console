@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Literal, NoReturn
 
 from .constants import (
+    APP_DB_ROLE,
     COMPONENT_TO_IMAGE,
     ENV_SECTIONS,  # noqa: F401 - re-exported for callers
     IMAGE_BUILD_CONFIG,
@@ -217,6 +219,24 @@ def derive_url_vars(
     }
 
 
+def derive_app_db_url(privileged_url: str, password: str | None = None) -> str:
+    """Return the restricted-role URL: same DSN as *privileged_url*, shs_app creds.
+
+    The API's bootstrap creates/refreshes the role from these credentials on
+    every boot, so a fresh password here is safe — it never needs out-of-band
+    registration.
+    """
+    import secrets
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(privileged_url)
+    host = parts.hostname or "postgres"
+    port = f":{parts.port}" if parts.port else ""
+    query = f"?{parts.query}" if parts.query else ""
+    password = password or secrets.token_hex(24)
+    return f"{parts.scheme}://{APP_DB_ROLE}:{password}@{host}{port}{parts.path}{query}"
+
+
 def write_env(path: Path, data: dict[str, str]) -> None:
     """Atomic write of a .env file, preserving comments from existing file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -320,12 +340,18 @@ def _is_secret_key(key: str) -> bool:
     return any(p in upper for p in SECRET_PATTERNS)
 
 
+# user:password@ inside any URL-shaped value (e.g. SHS_DATABASE_URL)
+_URL_CRED_RE = re.compile(r"(://[^:/@]+:)[^@]+(@)")
+
+
 def mask_value(key: str, value: str) -> str:
     """Mask secret values for display."""
     if _is_secret_key(key) and value:
         if len(value) <= 4:
             return "***"
         return value[:4] + "***"
+    if "://" in value and "@" in value:
+        return _URL_CRED_RE.sub(r"\1***\2", value)
     return value
 
 

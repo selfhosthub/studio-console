@@ -399,6 +399,10 @@ def _resolve_core_db_url(engine_image: str, workspace: Path) -> str | None:
     idx = _interactive_single("Database", choices, default=0, nav=False)
 
     if idx == 0:
+        info(_dim(
+            "The URL's role must have CREATEROLE — the API provisions the "
+            "restricted shs_app runtime role from it on boot."
+        ))
         url = _prompt_password("SHS_DATABASE_URL (postgresql+asyncpg://user:pass@host:5432/db)")
         if not url.strip():
             error("No URL entered — aborting.")
@@ -415,6 +419,60 @@ def _resolve_core_db_url(engine_image: str, workspace: Path) -> str | None:
     state["SHS_DATABASE_URL"] = url
     _save_state(state, CORE_STATE_DIR, CORE_STATE_FILE)
     return url
+
+
+def _ensure_core_app_db_url(db_url: str) -> str:
+    """Derive/persist core's restricted-role URL matching *db_url*'s DSN.
+
+    Password is generated once and persisted; if the operator repoints the
+    privileged URL at a different host/port/db, the DSN is re-derived keeping
+    the same password (the API's bootstrap refreshes the role from it on boot).
+    """
+    from urllib.parse import urlsplit
+
+    from .env import derive_app_db_url
+
+    state = _load_state(CORE_STATE_FILE)
+    existing = state.get("SHS_DATABASE_APP_URL", "")
+    new_parts = urlsplit(db_url)
+    if existing:
+        old = urlsplit(existing)
+        if (old.hostname, old.port, old.path) == (
+            new_parts.hostname,
+            new_parts.port,
+            new_parts.path,
+        ):
+            return existing
+    password = urlsplit(existing).password if existing else None
+    app_url = derive_app_db_url(db_url, password=password)
+    state["SHS_DATABASE_APP_URL"] = app_url
+    _save_state(state, CORE_STATE_DIR, CORE_STATE_FILE)
+    return app_url
+
+
+def _print_byo_provision_help(db_url: str, app_url: str) -> None:
+    """Fail-closed diagnosis for BYO Postgres: shs_app provisioning failed.
+
+    Two supported fixes (7cc4942ce): grant CREATEROLE for automatic mode, or
+    pre-create the role as a DB admin (manual mode — a correctly-attributed
+    role provisions fully every boot; the operator owns its password).
+    """
+    from urllib.parse import unquote, urlsplit
+
+    priv_role = urlsplit(db_url).username or "<your role>"
+    app = urlsplit(app_url)
+    app_role = app.username or "shs_app"
+    app_password = unquote(app.password or "")
+    error("The API did not become healthy. On boot it provisions the restricted")
+    error(f"{app_role} role via SHS_DATABASE_URL and fails closed if it can't.")
+    create_sql = (
+        f"CREATE ROLE {app_role} LOGIN PASSWORD '{app_password}' "
+        "NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;"
+    )
+    print(f"  {_dim('Fix on your Postgres (either one), then restart the container:')}")
+    print(f"    {_bold(f'ALTER ROLE {priv_role} CREATEROLE;')}   {_dim('(automatic mode)')}")
+    print(f"    {_bold(create_sql)}   {_dim('(manual mode)')}")
+    print(f"  {_dim('Diagnose:')} {_bold(f'docker logs {CORE_CONTAINER_NAME} --tail 30')}")
 
 
 def _defer_core_db() -> None:
@@ -464,6 +522,9 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
     if db_url is None:
         return False  # deferred or aborted
     creds["SHS_DATABASE_URL"] = db_url
+    # Restricted runtime role: the API provisions shs_app from this URL on
+    # boot and fails closed if it can't. Older images ignore the var.
+    creds["SHS_DATABASE_APP_URL"] = _ensure_core_app_db_url(db_url)
 
     _seed_first_boot_vars(workspace, creds)
     cf_token = _cf_token_mount(workspace, CORE_STATE_DIR)
@@ -495,6 +556,8 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
         from .commands import _core_plan
 
         _bootstrap_admin(workspace, _core_plan(CORE_CONTAINER_NAME, CORE_PG_CONTAINER))
+    elif CORE_PG_CONTAINER not in db_url:
+        _print_byo_provision_help(db_url, creds["SHS_DATABASE_APP_URL"])
 
     info("Opening in-container console ...")
     run(["docker", "exec", "-it", CORE_CONTAINER_NAME, "studio-console"], check=False, timeout=None)
@@ -522,6 +585,7 @@ def cmd_set_core_db_url(context: str, url: str | None = None) -> bool:
     state = _load_state(CORE_STATE_FILE)
     state["SHS_DATABASE_URL"] = url
     _save_state(state, CORE_STATE_DIR, CORE_STATE_FILE)
+    _ensure_core_app_db_url(url)  # keep the derived shs_app URL on the same DSN
     ok("Saved core database URL.")
 
     if run_quiet(["docker", "ps", "-q", "--filter", f"name=^{CORE_CONTAINER_NAME}$"])[1]:
