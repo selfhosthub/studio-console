@@ -555,7 +555,9 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
     if api_healthy:
         from .commands import _core_plan
 
-        _bootstrap_admin(workspace, _core_plan(CORE_CONTAINER_NAME, CORE_PG_CONTAINER))
+        _bootstrap_admin(
+            workspace, _core_plan(CORE_CONTAINER_NAME, CORE_PG_CONTAINER, nginx_port)
+        )
     elif CORE_PG_CONTAINER not in db_url:
         _print_byo_provision_help(db_url, creds["SHS_DATABASE_APP_URL"])
 

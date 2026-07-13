@@ -1073,15 +1073,19 @@ def _full_plan(container: str) -> "_BootstrapPlan":
     )
 
 
-def _core_plan(container: str, pg_container: str) -> "_BootstrapPlan":
+def _core_plan(
+    container: str, pg_container: str, nginx_port: int | str = 80
+) -> "_BootstrapPlan":
     # Core's API runs in `container`, but Postgres is an external sidecar
     # (`pg_container`) — so password hashing execs into the API container while
     # every psql runs against the sidecar. base omits "exec"; helpers append it.
+    # Core launches with publish_internal=False, so port 8000 is not published:
+    # reach the API through the front door.
     return _BootstrapPlan(
         base=["docker"],
         api_svc=container,
         pg_svc=pg_container,
-        api_base="http://localhost:8000/api/v1",
+        api_base=f"http://localhost:{nginx_port}/api/v1",
         exec_flags=[],
     )
 
