@@ -37,7 +37,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.bashrc           # macOS default shell is zsh — use ~/.zshrc instead
 
 # 2. Install studio-console
-uv tool install https://github.com/selfhosthub/studio-console/releases/download/v1.2.0/studio_console-1.2.0-py3-none-any.whl
+uv tool install https://github.com/selfhosthub/studio-console/releases/download/v1.3.0/studio_console-1.3.0-py3-none-any.whl
 
 # 3. Run
 studio-console
