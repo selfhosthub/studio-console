@@ -7,16 +7,16 @@
 # or --notes-from.
 #
 # Usage:
-#   scripts/release.sh 1.0.1
-#   scripts/release.sh 1.0.1 --notes-from path/to/notes.md
-#   scripts/release.sh 1.0.1 --message "Quick patch — see commits"
-#   scripts/release.sh 1.0.1 --dry-run
+#   scripts/release-console.sh 1.0.1
+#   scripts/release-console.sh 1.0.1 --notes-from path/to/notes.md
+#   scripts/release-consoe.sh 1.0.1 --message "Quick patch — see commits"
+#   scripts/release-console.sh 1.0.1 --dry-run
 #
 # Requirements:
 #   - clean working tree (no uncommitted changes)
 #   - on main branch
 #   - gh CLI authenticated as a user with push access
-#   - python -m build available (auto-installed if missing)
+#   - python3 -m build available (auto-installed if missing)
 
 set -euo pipefail
 
@@ -194,9 +194,9 @@ fi
 ok "notes from: $NOTES_SOURCE"
 
 # Build tool.
-if ! python -m build --version >/dev/null 2>&1; then
-    yellow "  python build module missing — installing"
-    run python -m pip install --quiet --upgrade build
+if ! python3 -m build --version >/dev/null 2>&1; then
+    yellow "  python3 build module missing — installing"
+    run python3 -m pip install --quiet --upgrade build
 fi
 ok "build tool ready"
 
@@ -284,7 +284,7 @@ ok "tagged"
 
 step "Building wheel"
 run rm -rf dist build studio_console.egg-info
-run python -m build --wheel
+run python3 -m build --wheel
 
 WHEEL=""
 if [[ "$DRY_RUN" == "0" ]]; then
