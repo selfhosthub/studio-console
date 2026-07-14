@@ -1,0 +1,112 @@
+Studio Console Use License
+
+Copyright (c) 2026 Kawika Ohumukini. All rights reserved.
+
+This license governs the use of Studio Console ("Console"), the operator
+command-line tool and its associated components and documentation. Console
+is distributed as a standalone artifact and is licensed separately from the
+Studio platform software, which is governed by its own Studio Use License.
+
+This is not an open-source license. The source code is publicly available
+for transparency and community contribution, but commercial use is subject
+to the terms below.
+
+
+1. PERMITTED USE
+
+You may:
+
+  (a) Install and use Console to provision, configure, back up, restore,
+      upgrade, scale, and otherwise manage your own Studio deployments.
+
+  (b) Install and provide Console on a client's infrastructure, and use it to
+      install, configure, manage, and provide ongoing management of Studio
+      deployments for individual clients as part of bespoke service
+      engagements, and to provide consulting, installation, deployment,
+      configuration, training, and support services related to Console and to
+      Studio. The copying and installation of Console reasonably necessary to
+      deliver these services is permitted notwithstanding Section 2.
+
+  (c) Modify Console for your own use.
+
+  (d) Contribute to this project.
+
+
+2. RESTRICTIONS
+
+You may not:
+
+  (a) Use Console, a modified version of Console, or any component derived
+      from it, to build, offer, or operate a platform, tool, or service whose
+      primary function is the automated or self-service provisioning of Studio
+      instances to third parties, or the vending of Studio instances as a
+      product. (Delivering managed services for a bespoke client's own
+      deployment, as permitted in Section 1(b), is not restricted by this
+      paragraph.)
+
+  (b) Offer automated or self-service provisioning of Studio instances to
+      third parties, whether by exposing Console directly, wrapping it, or
+      reimplementing its provisioning behavior.
+
+  (c) Fork or rebrand Console for resale or distribution as a competing
+      provisioning, deployment, or management tool or service.
+
+  (d) Redistribute, sublicense, or sell copies of the Console source code
+      as a standalone product or component.
+
+  (e) Create, distribute, or sell pre-configured images, containers,
+      deployment packages, or infrastructure templates that contain or
+      install Console for third-party use.
+
+  (f) Remove or alter any copyright, trademark, or license notices included
+      in Console.
+
+The distinction this license draws is between OPERATING and DISTRIBUTING.
+You may use Console to run and manage Studio deployments — your own or a
+client's. You may not use Console to build a business that provisions,
+hosts, or distributes Studio deployments as a service to others.
+
+
+3. RELATIONSHIP TO STUDIO AND MARKETPLACE
+
+Console is a separate artifact from the Studio platform and from Studio
+Marketplace packages. This license governs Console only. It grants no rights
+in the Studio platform software (see the Studio Use License) or in any
+marketplace package (see the Studio Marketplace Package License). Use of Console
+to manage a deployment does not authorize any use of Studio or marketplace
+content that those terms do not independently permit.
+
+
+4. TRADEMARKS
+
+"Studio," "Studio Console," "Self-Host Studio," "Self-Host Hub," and
+associated logos and marks are trademarks of the copyright holder. Use of
+these trademarks is subject to applicable trademark law. You may use these
+names to truthfully describe your relationship with the Software (e.g.,
+"manages Self-Host Studio," "built on Studio Console"). You may not use the
+trademarks in a way that implies endorsement, affiliation, or origin without
+prior written consent. Nothing in this license grants the right to use these
+names or marks as part of a product name, company name, or primary branding.
+
+
+5. CONTRIBUTIONS
+
+Contributions to this project are assigned to the copyright holder and their
+successors and assigns. By submitting a contribution, you agree to this
+assignment and represent that you have the right to make the contribution.
+
+
+6. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+IN NO EVENT SHALL THE AUTHORS, COPYRIGHT HOLDERS, OR CONTRIBUTORS BE LIABLE
+FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Operators are solely responsible for compliance with applicable laws and
+third-party service terms. See LEGAL.md for operator obligations.
+

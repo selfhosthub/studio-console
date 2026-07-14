@@ -6,11 +6,11 @@ requires-python = ">=3.8"
 dependencies = [
     "cryptography>=41.0",
 ]
-license = { text = "MIT" }
 keywords = ["studio", "selfhost", "operator", "console"]
+# ships LICENSE inside the wheel; no license field, the LICENSE file governs
+license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Environment :: Console",
 ]
