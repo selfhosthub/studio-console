@@ -2,16 +2,16 @@
 """Major-version boundary detection.
 
 Studio's API refuses to start when the database was migrated by a prior major
-version (see studio-app api/scripts/bootstrap.py:_check_major_version_compatibility).
+version (see Studio's api/scripts/bootstrap.py:_check_major_version_compatibility).
 This module lets the console detect that condition pre-start, so install,
 upgrade, and restore can block with a clear explanation instead of letting
 the operator hit a generic "API not responding" timeout.
 
 The bundled `data/known_baselines.json` maps each major version to its alembic
-baseline revision(s). A major may have more than one baseline because studio-app
+baseline revision(s). A major may have more than one baseline because Studio
 periodically squashes-and-stamps its migration chain to a new baseline; each
 historical baseline a restorable DB might sit on must be listed. It is re-synced
-from studio-app at console release time. Staleness is accepted: between a Studio
+from Studio at console release time. Staleness is accepted: between a Studio
 major release (or squash) and the next console release, prior-major detection
 falls back to log-scraping the API container after a failed start.
 """

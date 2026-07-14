@@ -7,8 +7,9 @@ dependencies = [
     "cryptography>=41.0",
 ]
 keywords = ["studio", "selfhost", "operator", "console"]
-# ships LICENSE inside the wheel; no license field, the LICENSE file governs
-license-files = ["LICENSE"]
+authors = [{name = "Kawika Ohumukini"}]
+license = "LicenseRef-Studio-Console-Use-License"
+license-files = ["LICENSE", "LEGAL.md"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",

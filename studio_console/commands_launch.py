@@ -151,7 +151,7 @@ _FIRST_BOOT_SEED_VARS = [
 ]
 
 # Container path the entrypoint reads the tunnel token from (consumed_secret_files
-# in the launch manifest). Must match studio-app's entrypoint exactly.
+# in the launch manifest). Must match Studio's entrypoint exactly.
 CF_TOKEN_MOUNT = "/run/secrets/cf-token"
 
 

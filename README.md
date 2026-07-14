@@ -161,7 +161,7 @@ scripts/release-console.sh major    # breaking     1.0.0 → 2.0.0
 
 Preview without touching anything: add `--dry-run`. Override the notes with `--message "..."`. Re-cut a release you already published (e.g. it shipped before a fix landed): `scripts/release-console.sh <X.Y.Z> --force`.
 
-After release, bump the console pin in **studio-app's versions file** to the new version so the next core/full image build bakes it in.
+After release, bump the console pin in the Studio versions file to the new version so the next core/full image build bakes it in.
 
 ---
 
@@ -202,3 +202,16 @@ For the Full image, run operational subcommands through `docker exec studio-full
 - **[Environment variables](docs/env-vars.md)** — every `SHS_*` and supporting var.
 - **[Public hostname topology](docs/topology.md)** — single vs split hostnames, Cloudflare tunnel + Access, IP restrictions.
 - **[VPS + RunPod deployments](docs/vps-runpod.md)** — hybrid setups with GPU worker pods on RunPod.
+
+---
+
+## License
+
+Studio Console is source-available under the **Studio Console Use License**. It is not open source.
+
+You may install, run, and modify Console to manage your own Studio deployments, and to install and manage deployments for individual clients as service work. You may not redistribute, fork, sublicense, or resell it, and you may not use it as the engine of a service that provisions or vends Studio instances to third parties.
+
+Console is licensed separately from the Studio platform, which is governed by its own [Studio Use License](https://github.com/selfhosthub/studio/blob/main/LICENSE). Installing Console grants no rights in Studio or in marketplace content.
+
+- [LICENSE](LICENSE) — the full terms
+- [LEGAL.md](LEGAL.md) — operator obligations, liability, and third-party responsibilities

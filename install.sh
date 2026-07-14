@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# install.sh — Studio Console installer (curl fallback)
+# install.sh: Studio Console installer
 #
-# Preferred install methods (use these if available):
-#   pip install studio-console
-#   brew install selfhosthub/studio/studio-console
+# Preferred install method:
+#   uv tool install <wheel-url-from-the-latest-release>
 #
-# This script is the fallback for environments without pip or brew:
+# This script is the fallback for environments without uv:
 #   curl -fsSL https://raw.githubusercontent.com/selfhosthub/studio-console/main/install.sh | bash
 
 set -euo pipefail
@@ -25,6 +24,13 @@ info()  { echo -e "${CYAN}▸${NC} $1"; }
 ok()    { echo -e "${GREEN}✓${NC} $1"; }
 warn()  { echo -e "${YELLOW}!${NC} $1"; }
 fatal() { echo -e "${RED}✗${NC} $1" >&2; exit 1; }
+
+# --- License notice ---
+echo ""
+echo -e "  Studio Console is source-available under the Studio Console Use License."
+echo -e "  It is not open source. Installing it accepts the terms:"
+echo -e "  ${CYAN}https://github.com/selfhosthub/studio-console/blob/main/LICENSE${NC}"
+echo ""
 
 # --- Python check ---
 PYTHON=""
@@ -125,4 +131,7 @@ echo -e "${GREEN}${BOLD}  Studio Console ${LATEST} installed${NC}"
 echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "  Run: ${BOLD}studio-console${NC}"
+echo ""
+echo -e "  License terms: ${INSTALL_DIR}/LICENSE"
+echo -e "  Operator obligations: ${INSTALL_DIR}/LEGAL.md"
 echo ""

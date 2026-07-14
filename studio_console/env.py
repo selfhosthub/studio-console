@@ -447,7 +447,7 @@ def validate_password(password: str) -> tuple[bool, str]:
 
 
 def _find_repo_root(env_file: Path | None = None) -> Path | None:
-    """Return the monorepo root (studio-app checkout).
+    """Return the monorepo root (Studio checkout).
 
     Resolution order:
       1. CONSOLE_REPO_ROOT shell environment variable

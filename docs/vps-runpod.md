@@ -21,28 +21,31 @@ Splitting these across a VPS and RunPod gives you:
 
 ## What runs on the VPS
 
-The VPS runs the core Studio stack via `deploy/quickstart.sh` and Docker Compose:
+The VPS runs the core Studio stack via studio-console and Docker Compose:
 
 | Service | Image | Purpose |
 |---------|-------|---------|
-| PostgreSQL | `postgres:16` | Database |
-| API | `selfhosthub/studio-api` | Backend server |
-| UI | `selfhosthub/studio-ui` | Next.js frontend |
-| General worker | `selfhosthub/studio-worker-general` | HTTP/API orchestration, provider integrations |
-| Transfer worker | `selfhosthub/studio-worker-transfer` | File uploads to external platforms |
+| PostgreSQL | `pgvector/pgvector` | Database |
+| API | `ghcr.io/selfhosthub/studio-api` | Backend server |
+| UI | `ghcr.io/selfhosthub/studio-ui` | Next.js frontend |
+| General worker | `ghcr.io/selfhosthub/studio-worker-general` | HTTP/API orchestration, provider integrations |
+| Transfer worker | `ghcr.io/selfhosthub/studio-worker-transfer` | File uploads to external platforms |
 
 **Minimum VPS specs:** 2 CPU / 4 GB RAM / 40 GB disk. A Hetzner CX32 or equivalent handles this comfortably.
 
 ### Setup
 
 ```bash
-# SSH into your VPS
-git clone https://github.com/selfhosthub/studio.git
-cd studio
-./deploy/quickstart.sh
+# SSH into your VPS, then install the console
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install <wheel-url-from-the-latest-release>
+
+# Run it: the wizard generates secrets, prompts for admin credentials,
+# writes ~/.studio, pulls images, and starts the stack
+studio-console
 ```
 
-The quickstart script generates secrets, prompts for admin credentials, pulls images, and starts the stack.
+See the [README](../README.md#quick-start) for the current install URL.
 
 ---
 
@@ -70,7 +73,7 @@ Workers are stateless pollers. They connect to the API via `SHS_API_BASE_URL`, a
 | `shs-comfyui` (image gen) | VRAM-hungry | RTX 3090 / 4090 | RTX 3080 (10 GB VRAM) | SDXL and Flux models need 10+ GB VRAM. 24 GB recommended. |
 | `shs-comfyui` (video gen) | Heavy | RTX 4090 / A100 | RTX 3090 (24 GB VRAM) | Video generation models are the most VRAM-hungry. 24 GB minimum, 40+ GB ideal. |
 
-**Cost-performance sweet spot:** An RTX 3090 pod on RunPod (~$0.40–0.50/hr community cloud) handles audio + image generation well. Only video generation benefits from stepping up to a 4090 or A100.
+**Cost-performance sweet spot:** An RTX 3090 pod on RunPod handles audio + image generation well. Only video generation benefits from stepping up to a 4090 or A100.
 
 ---
 
@@ -101,11 +104,11 @@ Create a pod template on RunPod for each worker type you need.
 
 ### Image
 
-Use the Docker Hub image for the worker type:
+Use the GHCR image for the worker type:
 
-- `selfhosthub/studio-worker-video:latest`
-- `selfhosthub/studio-worker-audio:latest`
-- `selfhosthub/studio-worker-comfyui:latest`
+- `ghcr.io/selfhosthub/studio-worker-video:latest`
+- `ghcr.io/selfhosthub/studio-worker-audio:latest`
+- `ghcr.io/selfhosthub/studio-worker-comfyui:latest`
 
 ### Required environment variables
 
@@ -189,9 +192,9 @@ Example monthly cost for a solo creator producing video content:
 | Domain | Any registrar | Optional | ~$1/month |
 | **Total** | | | **~$25/month** |
 
-Compare to: a dedicated GPU server ($150–300/month) or cloud GPU instances billed 24/7.
-
 The key savings come from GPU workers being idle most of the time. You only pay for active generation time.
+
+> Costs above are illustrative and were current when this page was written. Pricing is set by RunPod, Hetzner, and your registrar, not by us, and changes without notice. Check each provider's current rates before budgeting.
 
 ---
 

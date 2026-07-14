@@ -802,7 +802,7 @@ def cmd_build(env_file: Path, images: list[str] | None, confirm: bool = True) ->
     if repo is None:
         warn("Building from source requires CONSOLE_REPO_ROOT to be set.")
         warn("Add it to ~/.studio/.env or export it in your shell:")
-        warn("  CONSOLE_REPO_ROOT=/path/to/studio-app")
+        warn("  CONSOLE_REPO_ROOT=/path/to/studio")
         warn("In a standard install, Studio images are pulled from the registry.")
         return
 
@@ -1209,7 +1209,7 @@ def _bootstrap_first_admin(
         env_file, plan
     ).get("SHS_ENTITLEMENT_TOKEN"):
         print()
-        info("Entitlement token (unlocks plus features — leave blank to skip)")
+        info("Entitlement token (enables the Plus catalog; leave blank to skip)")
         token = _prompt("Entitlement token", "").strip()
         if token:
             os.environ["SHS_ENTITLEMENT_TOKEN"] = token
@@ -1330,7 +1330,7 @@ def _create_admin_direct(
     if rc != 0:
         raise RuntimeError(
             f"Failed to set is_staging on system org (rc={rc}): {upd_out}. "
-            "studio-app schema may be missing the is_staging column — upgrade studio-app."
+            "The Studio schema may be missing the is_staging column; upgrade Studio."
         )
 
     # 3. Insert admin user
@@ -1493,8 +1493,8 @@ def _create_default_org_admin(
     if rc != 0 or not org_out.strip():
         raise RuntimeError(
             f"Default org INSERT failed (rc={rc}): {org_out}. "
-            "The organizations schema may differ from what console expects — "
-            "upgrade studio-app."
+            "The organizations schema may differ from what console expects; "
+            "upgrade Studio."
         )
     org_id = org_out.strip().splitlines()[0]
 

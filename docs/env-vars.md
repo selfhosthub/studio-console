@@ -121,7 +121,7 @@ Managed by studio-console via `docker-compose.override.yml`. Not set in `.env` d
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SHS_COMMUNITY_SOURCE` | — | Community catalog: local dir name (e.g. `studio-cat`) or full GitHub raw URL. Required. |
+| `SHS_COMMUNITY_SOURCE` | — | Community catalog: local dir name or full GitHub raw URL (e.g. `https://raw.githubusercontent.com/selfhosthub/studio-community/main`). Required. |
 | `SHS_PLUS_SOURCE` | — | Plus catalog: dir name or URL. Required. |
 | `SHS_CATALOG_CACHE_HOURS` | `24` | Hours to cache fetched catalog. Studio-console sets `168` (1 week) in production. |
 | `SHS_ENTITLEMENT_TOKEN` | `""` | Plus catalog access token. Optional. |
@@ -152,7 +152,7 @@ Required only when using Cloudflare Tunnel (`COMPOSE_PROFILES=cloudflared`) or D
 
 | Variable | Description |
 |----------|-------------|
-| `CONSOLE_REPO_ROOT` | Path to a local `studio-app` checkout. Only needed when building images from source rather than pulling from GHCR. |
+| `CONSOLE_REPO_ROOT` | Path to a local Studio checkout. Only needed when building images from source rather than pulling from GHCR. |
 
 ### Context Detection (shell-only, never written to `.env`)
 

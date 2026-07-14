@@ -205,9 +205,7 @@ Detection works in all three shapes (Split, Core, Full). `read_db_revision` and 
 
 Bundled `data/known_baselines.json` maps `{major: baseline_alembic_revision}`. Stale-by-design: when a new Studio major ships before the next console release, the bundled map doesn't recognize it — the log-scrape fallback catches the condition post-failure instead of pre-blocking. Mid-chain mismatches (e.g., DB at v1.2 / image at v1.1) also fall through to log-scrape; the bundled map only holds major baselines.
 
-Operator remedy when the block fires: set `SHS_STUDIO_VERSION` back to a tag matching the database's major, or restore a backup compatible with the running image. There is no automated migration tool yet — the upgrade tool is tracked as a separate card in studio-app.
-
-Plan doc: [plans/major-version-console-ux.md](plans/major-version-console-ux.md).
+Operator remedy when the block fires: set `SHS_STUDIO_VERSION` back to a tag matching the database's major, or restore a backup compatible with the running image. There is no automated migration tool yet.
 
 ### Deployment contexts
 

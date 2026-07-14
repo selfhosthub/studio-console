@@ -159,7 +159,7 @@ class SetupState:
         )
         self.postgres_password: str = self.existing.get("POSTGRES_PASSWORD", "")
 
-        # Community
+        # Entitlement (Plus)
         self.entitlement_token: str = self.existing.get("SHS_ENTITLEMENT_TOKEN", "")
 
         # Studio image version (registry mode)
@@ -939,14 +939,14 @@ def _section_secrets(state: SetupState) -> None:
     return
 
 
-def _section_community(state: SetupState) -> None:
-    """Optionally configure the SelfHostHub Community entitlement token."""
+def _section_entitlement(state: SetupState) -> None:
+    """Optionally configure the Plus entitlement token."""
     print()
     print(
-        f"  {_yellow(_bold('Unlock advanced providers and workflows with an Entitlement Token'))}"
+        f"  {_yellow(_bold('Unlock the Plus catalog with an Entitlement Token.'))}"
     )
-    print(f"  {_yellow(_bold('from the SelfHostHub Community.'))}")
-    print(f"\n  {_cyan('→')} {_cyan(_bold('https://skool.com/selfhostinnovators'))}\n")
+    print(f"  {_yellow(_bold('Plus access comes with the SelfHost Innovators membership.'))}")
+    print(f"\n  {_cyan('→')} {_cyan(_bold('https://www.skool.com/selfhostinnovators'))}\n")
 
     if state.entitlement_token:
         if not _interactive_yn(
@@ -1274,7 +1274,7 @@ WIZARD_SECTIONS = [
     ("Components", _section_components_and_scaling),
     ("Scale API/UI", _section_api_ui_scaling),
     ("Secrets", _section_secrets),
-    ("Entitlement token", _section_community),
+    ("Entitlement token", _section_entitlement),
     ("Source repository", _section_repo_root),
     ("Public access + Cloudflare", _section_network_and_cloudflare),
 ]

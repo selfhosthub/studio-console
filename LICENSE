@@ -62,7 +62,7 @@ You may not:
       in Console.
 
 The distinction this license draws is between OPERATING and DISTRIBUTING.
-You may use Console to run and manage Studio deployments — your own or a
+You may use Console to run and manage Studio deployments, your own or a
 client's. You may not use Console to build a business that provisions,
 hosts, or distributes Studio deployments as a service to others.
 

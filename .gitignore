@@ -38,3 +38,9 @@ htmlcov/
 # Scratch
 CHANGES.diff
 CHANGES.md
+
+# Internal seat files, never publish to this repo
+CLAUDE.md
+THINKING.md
+.claude/
+chat-index.md
