@@ -44,3 +44,5 @@ CLAUDE.md
 THINKING.md
 .claude/
 chat-index.md
+# uv test-run artifact
+uv.lock
