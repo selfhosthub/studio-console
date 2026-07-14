@@ -213,5 +213,5 @@ You may install, run, and modify Console to manage your own Studio deployments, 
 
 Console is licensed separately from the Studio platform, which is governed by its own [Studio Use License](https://github.com/selfhosthub/studio/blob/main/LICENSE). Installing Console grants no rights in Studio or in marketplace content.
 
-- [LICENSE](LICENSE) — the full terms
-- [LEGAL.md](LEGAL.md) — operator obligations, liability, and third-party responsibilities
+- [LICENSE](LICENSE): the full terms
+- [LEGAL.md](LEGAL.md): operator obligations and third-party responsibilities
