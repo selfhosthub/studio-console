@@ -1,0 +1,50 @@
+name: publish-pypi
+
+# Fires on the version tags that release-console.sh pushes (v1.3.4, ...). Builds
+# the wheel + sdist from the tagged commit and publishes to PyPI via Trusted
+# Publishing (OIDC, no token). The PyPI project is created on the first run from
+# the pending publisher registered for this repo + workflow + environment.
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual button, for the first publish (the v1.3.4 tag predates this workflow)
+  # or to re-run if an upload flakes. Publishes whatever VERSION is on the branch.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The tag and the VERSION file are cut together by release-console.sh; fail
+      # loudly if they ever disagree rather than publish a mismatched version.
+      # Only meaningful on a tag push; a manual dispatch has no tag to compare.
+      - name: Version matches the tag
+        if: github.ref_type == 'tag'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(cat VERSION | tr -d '[:space:]')"
+          if [ "$tag" != "$file" ]; then
+            echo "tag v$tag != VERSION $file" >&2
+            exit 1
+          fi
+
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
