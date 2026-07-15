@@ -6,9 +6,9 @@ Operator CLI for managing a self-hosted [Studio](https://github.com/selfhosthub/
 
 Studio ships three images. Most operators want **Split**.
 
-- **Split** — multi-container compose stack. Console runs on the host and manages `docker compose`. **This README documents Split.**
-- **Core** (`studio-core`) — single container bundling API + UI; you bring an external Postgres. Console runs inside the container.
-- **Full** (`studio-full` / `studio-standalone`) — single container with bundled Postgres.
+- **Split**: multi-container compose stack. Console runs on the host and manages `docker compose`. **This README documents Split.**
+- **Core** (`studio-core`): single container bundling API + UI; you bring an external Postgres. Console runs inside the container.
+- **Full** (`studio-full`): single container with bundled Postgres.
 
 In Core and Full the container entrypoint provisions Studio on first boot; the console is a diagnostic + ops tool.
 
@@ -18,6 +18,7 @@ In Core and Full the container entrypoint provisions Studio on first boot; the c
 
 - [Quick Start](#quick-start)
 - [Run the Full image](#run-the-full-image)
+- [Run the Core image](#run-the-core-image)
 - [Daily Operations](#daily-operations)
 - [Upgrading](#upgrading)
 - [CLI Reference](#cli-reference)
@@ -34,14 +35,16 @@ In Core and Full the container entrypoint provisions Studio on first boot; the c
 ```sh
 # 1. Install uv (one-time)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-source ~/.bashrc           # macOS default shell is zsh — use ~/.zshrc instead
+source ~/.bashrc           # macOS default shell is zsh, use ~/.zshrc instead
 
-# 2. Install studio-console
-uv tool install https://github.com/selfhosthub/studio-console/releases/download/v1.3.4/studio_console-1.3.4-py3-none-any.whl
+# 2. Install studio-console (isolated CLI, recommended)
+uv tool install studio-console
 
 # 3. Run
 studio-console
 ```
+
+No uv and don't want it? `pip install studio-console` works anywhere Python 3.8+ is available. It installs into the active environment instead of an isolated one, so a virtualenv is a good idea.
 
 On first run with no `~/.studio/.env`, the wizard launches. Walk through the sections, save, then go to **Services → Start all**.
 
@@ -81,11 +84,11 @@ Full list of supported environment variables in [docs/env-vars.md](docs/env-vars
 The **Full** image (`studio-full`) is a single self-contained container — bundled Postgres, API, UI, and workers under supervisord. No Compose stack, no external database. `launch-full` runs it on your machine and drops you into its in-container console.
 
 ```sh
-# Launch (workspace defaults to ~/.studio, shared with Split)
-studio-console launch-full --tag 1.0.0
+# Launch (defaults to the latest tag; workspace defaults to ~/.studio, shared with Split)
+studio-console launch-full
 
-# Use a separate workspace to run Full alongside a Split install
-studio-console launch-full --tag 1.0.0 --workspace ~/.studio-full
+# Pin a tag and/or use a separate workspace to run Full alongside a Split install
+studio-console launch-full --tag 1.2.4 --workspace ~/.studio-full
 ```
 
 The workspace (mounted at `/workspace`) holds the generated `.env`, the Postgres data dir, and org files — it persists across restarts. You're prompted once for a supervisor username/password; the console remembers them and re-injects on every launch.
@@ -106,6 +109,38 @@ docker exec studio-full studio-console logs api
 ```
 
 Inside the container the console manages services via `supervisorctl` (health, restart, logs, per-service control), plus config, backup, password reset, and Cloudflare setup.
+
+---
+
+## Run the Core image
+
+The **Core** image (`studio-core`) is the same single-container API + UI as Full, but without a bundled database. You bring your own Postgres (a managed cloud instance, a RunPod sidecar, any reachable server). `launch-core` runs it on your machine and drops you into its in-container console.
+
+Point Core at your database first, then launch:
+
+```sh
+# Set the external database URL (prompts if you omit it)
+studio-console core-db-url postgresql+asyncpg://user:pass@host:5432/studio
+
+# Launch (defaults to the latest tag; workspace defaults to ~/.studio-core)
+studio-console launch-core
+
+# Pin a tag and/or use a separate workspace
+studio-console launch-core --tag 1.2.4 --workspace ~/.studio-core
+```
+
+Precedence for the database URL: a saved value from `core-db-url`, then the `SHS_DATABASE_URL` environment variable, then an interactive prompt. Export the env var to boot Core unattended against a remote Postgres with no prompt:
+
+```sh
+SHS_DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/studio studio-console launch-core
+```
+
+Re-enter and run one-off commands the same way as Full, swapping the container name:
+
+```sh
+docker exec -it studio-core studio-console        # re-open the in-container menu
+docker exec studio-core studio-console health
+```
 
 ---
 
@@ -140,28 +175,10 @@ Pulls the latest tag from GHCR, updates `SHS_STUDIO_VERSION` in `.env`, and rest
 **studio-console itself:**
 
 ```bash
-uv tool install --force <new-release-url>
+studio-console self-update
 ```
 
-Latest release is always at [github.com/selfhosthub/studio-console/releases/latest](https://github.com/selfhosthub/studio-console/releases/latest).
-
----
-
-## Cutting a release
-
-**One command. Never tag, bump `VERSION`, or run `gh release` by hand** — the script does all of it (bumps `VERSION`, updates the README install URL, commits, pushes, tags, builds the wheel, publishes the release with the correct title).
-
-```bash
-# 1. Land your fix on main first (commit + push as normal).
-# 2. Then cut the release — pick the bump size:
-scripts/release-console.sh patch    # bug fix      1.0.0 → 1.0.1
-scripts/release-console.sh minor    # new feature  1.0.0 → 1.1.0
-scripts/release-console.sh major    # breaking     1.0.0 → 2.0.0
-```
-
-Preview without touching anything: add `--dry-run`. Override the notes with `--message "..."`. Re-cut a release you already published (e.g. it shipped before a fix landed): `scripts/release-console.sh <X.Y.Z> --force`.
-
-After release, bump the console pin in the Studio versions file to the new version so the next core/full image build bakes it in.
+`self-update` detects how Console was installed (uv, pip, or Homebrew) and upgrades in place.
 
 ---
 
@@ -182,6 +199,7 @@ studio-console restore [path]           # restore from backup directory
 studio-console links                    # print service URLs
 studio-console config                   # show current .env values
 studio-console config set KEY VALUE     # set a single .env value
+studio-console config unset KEY         # remove a single .env value
 studio-console workers                  # list/scale workers
 studio-console reset-password           # reset super admin password
 studio-console wizard                   # re-run setup wizard
@@ -190,9 +208,11 @@ studio-console self-update              # upgrade studio-console itself
 studio-console version                  # print version
 
 studio-console launch-full [--tag T] [--workspace DIR]   # run the Full single-container image on the host
+studio-console launch-core [--tag T] [--workspace DIR]   # run the Core single-container image (external Postgres)
+studio-console core-db-url [URL]        # set Core's external database URL for the next launch-core
 ```
 
-For the Full image, run operational subcommands through `docker exec studio-full studio-console <cmd>` — see [Run the Full image](#run-the-full-image).
+For the Full or Core image, run operational subcommands through `docker exec studio-full studio-console <cmd>` (or `studio-core`). See [Run the Full image](#run-the-full-image) and [Run the Core image](#run-the-core-image).
 
 ---
 
