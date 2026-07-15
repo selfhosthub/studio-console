@@ -2927,10 +2927,16 @@ def cmd_self_update(context: str) -> None:
             [os.sys.executable, "-m", "pip", "install", "--upgrade", "studio-console"],
             timeout=120,
         )
-        ok("Updated — restart studio-console to use the new version")
+        ok("Updated. Restart studio-console to use the new version.")
         return
 
-    # uv and curl installs both resolve the latest GitHub release first
+    if method == "uv":
+        info("Updating via uv tool...")
+        run(["uv", "tool", "install", "--force", "studio-console"], timeout=120)
+        ok("Updated. Restart studio-console to use the new version.")
+        return
+
+    # curl installs resolve the latest GitHub release and extract its tarball
     info("Checking for updates...")
     api_url = "https://api.github.com/repos/selfhosthub/studio-console/releases/latest"
     try:
@@ -2952,16 +2958,6 @@ def cmd_self_update(context: str) -> None:
         return
 
     info(f"Updating {__version__} → {latest_version}")
-
-    if method == "uv":
-        wheel_url = (
-            f"https://github.com/selfhosthub/studio-console/releases/download/"
-            f"{latest_tag}/studio_console-{latest_version}-py3-none-any.whl"
-        )
-        info("Updating via uv tool...")
-        run(["uv", "tool", "install", "--force", wheel_url], timeout=120)
-        ok("Updated — restart studio-console to use the new version")
-        return
 
     tarball_url = f"https://github.com/selfhosthub/studio-console/archive/refs/tags/{latest_tag}.tar.gz"
     install_dir = Path(__file__).resolve().parent.parent
