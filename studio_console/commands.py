@@ -76,7 +76,7 @@ from .wizard import (
 def _apply_scale_flags(up_cmd: list[str], env_data: dict) -> list[str]:
     """Append --scale flags for any *active* worker with a count != 1.
 
-    Only scales services whose profile is in COMPOSE_PROFILES — compose errors
+    Only scales services whose profile is in COMPOSE_PROFILES, compose errors
     'no such service: X: disabled' if you --scale a profile that isn't active.
     """
     active = {p for p in env_data.get("COMPOSE_PROFILES", "").split(",") if p}
@@ -92,7 +92,7 @@ def _apply_scale_flags(up_cmd: list[str], env_data: dict) -> list[str]:
 def _stop_api_ui_containers() -> None:
     """Remove all studio-api-*, studio-ui-*, studio-nginx-* containers directly.
 
-    Uses 'ps -a' so Created/Exited containers (not just running ones) are caught —
+    Uses 'ps -a' so Created/Exited containers (not just running ones) are caught
     otherwise a leftover 'studio-api-2' in Created state collides with compose on
     recreate ('container name already in use'). 'docker rm -f' force-removes
     running ones too; '-s' is NOT a valid rm flag.
@@ -167,7 +167,7 @@ def config_menu(context: str, env_file: Path) -> None:
 
     menu_options = [
         f"Services        {_dim('start · stop · restart · health · logs · links')}",
-        f"Setup           {_dim('wizard — components · secrets · domain · cloudflare')}",
+        f"Setup           {_dim('wizard: components · secrets · domain · cloudflare')}",
         f"Images          {_dim('build · upgrade · rollback')}",
         f"Advanced        {_dim('scale API/UI · per-service ops · cloudflare')}",
         f"Backup          {_dim('backup · restore')}",
@@ -212,7 +212,7 @@ def config_menu(context: str, env_file: Path) -> None:
                 print(f"  Status: {_cyan('configured')}  |  Services → Start all")
             elif mv.scrape_guardrail_failure(env_file, context):
                 print(
-                    f"  Status: {_red('blocked')}  |  major-version boundary — see Services → Health"
+                    f"  Status: {_red('blocked')}  |  major-version boundary, see Services → Health"
                 )
             else:
                 print(f"  Status: {_yellow('starting...')}")
@@ -265,7 +265,7 @@ def _restart_for_setup(
     base = compose_cmd(env_file)
     new_profiles = {p for p in env_data.get("COMPOSE_PROFILES", "").split(",") if p}
 
-    # Resolve missing images BEFORE stopping anything — a missing image must not
+    # Resolve missing images BEFORE stopping anything, a missing image must not
     # leave a running stack torn down. In source mode we build; in registry mode
     # we pull. Only if a pull fails do we bail, with everything still up.
     missing = _missing_images(env_file)
@@ -279,10 +279,10 @@ def _restart_for_setup(
             if not _pull_images(missing, tag):
                 error(f"Failed to pull images: {', '.join(missing)}")
                 warn("Check the tag (SHS_STUDIO_VERSION) and registry access.")
-                warn("No changes applied — services left as they were.")
+                warn("No changes applied, services left as they were.")
                 return
 
-    # Stop workers directly — catches orphans whose profiles were removed from .env.
+    # Stop workers directly, catches orphans whose profiles were removed from .env.
     # 'ps -a' so Created/Exited workers are removed too (avoids name collisions on
     # recreate); 'rm -f' force-removes running ones ('-s' is not a valid rm flag).
     _, ps_out = run_quiet(["docker", "ps", "-aq", "--filter", "name=studio-worker-"])
@@ -302,7 +302,7 @@ def _restart_for_setup(
                 timeout=120,
             )
         else:
-            # Workers only — explicit service names so API/UI/nginx are never touched
+            # Workers only, explicit service names so API/UI/nginx are never touched
             worker_services = [
                 svc for svc in SCALE_PROFILES.values() if svc in new_profiles
             ]
@@ -315,7 +315,7 @@ def _restart_for_setup(
                     timeout=120,
                 )
             else:
-                info("No active worker profiles — nothing to start.")
+                info("No active worker profiles, nothing to start.")
         ok("Done")
     except Exception as e:
         error(f"Docker Compose failed: {e}")
@@ -327,13 +327,13 @@ def _restart_for_setup(
 
 
 def _submenu_setup(context: str, env_file: Path) -> None:
-    """Setup submenu — runs the wizard then offers Apply now / Skip."""
+    """Setup submenu, runs the wizard then offers Apply now / Skip."""
     old_profiles = (
         read_env(env_file).get("COMPOSE_PROFILES", "") if env_file.exists() else ""
     )
     if wizard(context, env_file):
         apply_options = [
-            f"Apply now  {_dim('restarts changed services — brief downtime possible')}",
+            f"Apply now  {_dim('restarts changed services, brief downtime possible')}",
             f"Skip       {_dim('apply on next manual restart')}",
         ]
         pick = _interactive_single(
@@ -364,7 +364,7 @@ def _cmd_scale_api_ui(env_file: Path) -> None:
     ok("Scaling updated")
     if not _interactive_yn("Restart API + UI to apply?", default=True):
         return
-    warn_header("This will restart API, UI, and nginx — workers will keep running")
+    warn_header("This will restart API, UI, and nginx. Workers will keep running")
     _stop_api_ui_containers()
     env_data = read_env(env_file)
     run(
@@ -377,7 +377,7 @@ def _cmd_scale_api_ui(env_file: Path) -> None:
 
 
 def _submenu_services(context: str, env_file: Path) -> None:
-    """Services submenu — daily ops: start/stop/restart all, health, logs, links."""
+    """Services submenu, daily ops: start/stop/restart all, health, logs, links."""
     options = [
         f"Start all      {_dim('pull/build if needed, then start')}",
         f"Stop all       {_dim('stop all containers')}",
@@ -459,7 +459,7 @@ def _owns_postgres(env_data: dict) -> bool:
     """True if SHS_DATABASE_URL points at a postgres instance we manage.
 
     External DBs (CloudSQL, RDS, etc., or a CloudSQL Auth Proxy sidecar) own
-    their own backup tooling — console refuses backup/restore in those cases
+    their own backup tooling, console refuses backup/restore in those cases
     rather than producing dumps that can't be restored back to the source.
     """
     url = env_data.get("SHS_DATABASE_URL", "")
@@ -511,7 +511,7 @@ def _submenu_backup(context: str, env_file: Path) -> None:
 def cmd_db_role(context: str, env_file: Path) -> None:
     """Show/enable the restricted runtime DB role (shs_app cutover).
 
-    Console only writes SHS_DATABASE_APP_URL — the API's bootstrap provisions
+    Console only writes SHS_DATABASE_APP_URL, the API's bootstrap provisions
     the role, grants, and RLS posture from it on every boot. SHS_DATABASE_URL
     stays privileged; console's own psql/dump/restore tooling keeps using it.
     """
@@ -527,10 +527,10 @@ def cmd_db_role(context: str, env_file: Path) -> None:
         "SHS_DATABASE_URL", ""
     )
     if not db_url:
-        error("No SHS_DATABASE_URL found — configure the database first.")
+        error("No SHS_DATABASE_URL found. Configure the database first.")
         return
 
-    warn_header("The API currently connects as the privileged DB role — RLS is inert")
+    warn_header("The API currently connects as the privileged DB role; RLS is inert")
     info("Enabling writes SHS_DATABASE_APP_URL (role shs_app) next to SHS_DATABASE_URL.")
     info("The API provisions the role itself on next boot; console runs no SQL.")
     info(_dim("Requires a studio image with restricted-role support; older images ignore it."))
@@ -542,7 +542,7 @@ def cmd_db_role(context: str, env_file: Path) -> None:
     print()
 
     if not _interactive_yn("Enable the restricted DB role?", default=False):
-        info("Skipped — no changes made.")
+        info("Skipped, no changes made.")
         return
 
     set_env_value(env_file, "SHS_DATABASE_APP_URL", derive_app_db_url(db_url))
@@ -560,26 +560,26 @@ def cmd_db_role(context: str, env_file: Path) -> None:
                 ),
                 timeout=120,
             )
-            ok("Services restarted — check Services → Health for the RLS posture.")
+            ok("Services restarted. Check Services → Health for the RLS posture.")
         else:
             info("Takes effect on the next restart of the API.")
     else:
         warn(
-            "Restart this container from the host to apply — provisioning runs in "
+            "Restart this container from the host to apply, provisioning runs in "
             "the container entrypoint, not under supervisord."
         )
         print(f"    {_bold('docker restart <container>')}   {_dim('(or stop/start the pod on RunPod)')}")
 
 
 def _submenu_advanced(context: str, env_file: Path) -> None:
-    """Advanced submenu — scale API/UI, per-service ops, Cloudflare ops."""
+    """Advanced submenu, scale API/UI, per-service ops, Cloudflare ops."""
     options = [
         f"Scale API/UI      {_dim('set replica count, enable/disable nginx LB')}",
         f"Start one         {_dim('start a stopped service')}",
         f"Stop one          {_dim('stop a running service')}",
         f"Restart one       {_dim('restart a single service')}",
         f"Show .env         {_dim('current configuration values')}",
-        f"DB role           {_dim('restricted runtime role (RLS) — status · enable')}",
+        f"DB role           {_dim('restricted runtime role (RLS): status · enable')}",
         f"Cloudflare        {_dim('tunnel · routes · IP rules · Access')}",
     ]
     idx = _interactive_single("Advanced", options, default=0)
@@ -759,7 +759,7 @@ def _submenu_cloudflare(context: str, env_file: Path) -> None:
 
                 _sync_derived_urls(env_file)
                 ok(f"Domain updated to {new_domain.rstrip('/')}")
-                warn("API token not set — DNS records and Access app not updated")
+                warn("API token not set, DNS records and Access app not updated")
             else:
                 warn("No domain entered")
 
@@ -902,7 +902,7 @@ def cmd_build(env_file: Path, images: list[str] | None, confirm: bool = True) ->
         running = [line.strip() for line in out.strip().splitlines() if line.strip()]
         if running:
             warn_header(
-                "Restart required to apply new images — Studio will be briefly unavailable"
+                "Restart required to apply new images. Studio will be briefly unavailable"
             )
             info(f"Running services: {', '.join(running)}")
             if _interactive_yn("Restart now?", default=True, nav=False):
@@ -963,7 +963,7 @@ def cmd_start(context: str, env_file: Path) -> None:
                     run(compose_cmd(env_file) + ["pull"], timeout=600)
                 except Exception:
                     error("The download was interrupted before it finished.")
-                    warn("Run Start again — it should pick up where it left off.")
+                    warn("Run Start again, it should pick up where it left off.")
                     return False
                 ok("Images pulled")
 
@@ -1077,7 +1077,7 @@ def _core_plan(
     container: str, pg_container: str, nginx_port: int | str = 80
 ) -> "_BootstrapPlan":
     # Core's API runs in `container`, but Postgres is an external sidecar
-    # (`pg_container`) — so password hashing execs into the API container while
+    # (`pg_container`), so password hashing execs into the API container while
     # every psql runs against the sidecar. base omits "exec"; helpers append it.
     # Core launches with publish_internal=False, so port 8000 is not published:
     # reach the API through the front door.
@@ -1134,7 +1134,7 @@ def _unset_env_for_bootstrap(
 
 
 def _super_admin_exists(plan: "_BootstrapPlan", env_data: dict) -> bool:
-    """True if a super_admin user is already in the DB — the bootstrap gate."""
+    """True if a super_admin user is already in the DB, the bootstrap gate."""
     pg_user = env_data.get("POSTGRES_USER", "postgres")
     rc, out = run_quiet(
         plan.base
@@ -1251,7 +1251,7 @@ def _bootstrap_first_admin(
             plan,
         )
         return True
-    warn("Bootstrap incomplete — will retry account creation on next start.")
+    warn("Bootstrap incomplete, will retry account creation on next start.")
     return False
 
 
@@ -1574,7 +1574,7 @@ def _app_db_url(env_data: dict) -> str:
 
 def _print_db_role_posture(env_data: dict, api_up: bool) -> None:
     """One-line RLS posture. A healthy API with the app URL set proves
-    restricted mode — boot is fail-closed on an RLS-inert role."""
+    restricted mode, boot is fail-closed on an RLS-inert role."""
     if _app_db_url(env_data):
         if api_up:
             print(
@@ -1584,12 +1584,12 @@ def _print_db_role_posture(env_data: dict, api_up: bool) -> None:
         else:
             print(
                 f"  {'DB role':24s} {_yellow('restricted (configured)')}  "
-                f"{_dim('API down — an RlsInertError in its logs means SHS_DATABASE_APP_URL is misconfigured')}"
+                f"{_dim('API down, an RlsInertError in its logs means SHS_DATABASE_APP_URL is misconfigured')}"
             )
     else:
         print(
             f"  {'DB role':24s} {_yellow('privileged')}  "
-            f"{_dim('RLS inert, app-layer checks only — enable via the DB role menu')}"
+            f"{_dim('RLS inert, app-layer checks only, enable via the DB role menu')}"
         )
 
 
@@ -1864,7 +1864,7 @@ def cmd_reset_password(context: str, env_file: Path) -> None:
         info("Resetting admin password...")
         try:
             # SHS_ names are the app script's env contract (scripts/reset_admin_password.py
-            # reads SHS_ADMIN_PASSWORD / SHS_FORCE_PRODUCTION) — keep them, do NOT rename
+            # reads SHS_ADMIN_PASSWORD / SHS_FORCE_PRODUCTION), keep them, do NOT rename
             # to CONSOLE_. Transient injection only; never written to .env.
             run(
                 compose_cmd(env_file)
@@ -1884,7 +1884,7 @@ def cmd_reset_password(context: str, env_file: Path) -> None:
             error("Failed to reset password. Check that the API container is healthy.")
     else:
         info("Resetting admin password...")
-        # SHS_ names are the app script's env contract — keep, do NOT rename to CONSOLE_.
+        # SHS_ names are the app script's env contract, keep, do NOT rename to CONSOLE_.
         os.environ["SHS_ADMIN_PASSWORD"] = new_password
         os.environ["SHS_FORCE_PRODUCTION"] = "true"
         try:
@@ -2039,7 +2039,7 @@ def _format_local_time(iso_string: str) -> tuple[str, str]:
 def _verify_post_restore(context: str, env_file: Path, db_file: str) -> None:
     """After restore, confirm the live DB's alembic_version matches the dump's.
 
-    Mismatch means the apply succeeded but landed on the wrong schema — surface
+    Mismatch means the apply succeeded but landed on the wrong schema, surface
     it loudly so the operator doesn't trust a silent success.
     """
     expected = _read_revision_from_dump(db_file)
@@ -2111,7 +2111,7 @@ def _restore_preflight(context: str, env_file: Path, db_file: str) -> bool:
 
     # Encryption-key check: the dump's encrypted columns are only readable with
     # the key they were written under. We never store that key in the backup, so
-    # we compare fingerprints — live key vs. the fp recorded in the header.
+    # we compare fingerprints, live key vs. the fp recorded in the header.
     backup_key_fp = header.get("encryption_key_fp", "")
     live_key_fp = _encryption_key_fingerprint(env_data)
     key_mismatch = bool(backup_key_fp and live_key_fp and backup_key_fp != live_key_fp)
@@ -2172,7 +2172,7 @@ def _restore_preflight(context: str, env_file: Path, db_file: str) -> bool:
         )
         if _offer_key_recovery(env_file, backup_key_fp):
             return True  # key now matches; fall through to restore
-        info(_cyan("Restore needs the matching key — the data is unreadable without it."))
+        info(_cyan("Restore needs the matching key. The data is unreadable without it."))
         info("Aborted (no valid encryption key).")
         return False
 
@@ -2259,7 +2259,7 @@ def cmd_backup(
 
     ok(f"Backup complete: {backup_dir}")
 
-    # The encryption key is deliberately NOT stored in the backup — co-locating
+    # The encryption key is deliberately NOT stored in the backup, co-locating
     # it with the ciphertext would let anyone holding the backup decrypt it.
     # Skip the notice for internal pre-restore snapshots (not operator-facing).
     if what in ("all", "db") and name_prefix != "pre-restore":
@@ -2275,7 +2275,7 @@ def _print_encryption_key_notice(env_data: dict) -> None:
     print(_bold("⚠ Record your encryption key separately"))
     print("─" * 40)
     if key:
-        print("This backup does NOT contain your encryption key — by design, so a")
+        print("This backup does NOT contain your encryption key, by design, so a")
         print("stolen backup can't be decrypted. The dump is unrecoverable without it.")
         print()
         print("Copy SHS_CREDENTIAL_ENCRYPTION_KEY from your .env into a password manager or")
@@ -2283,7 +2283,7 @@ def _print_encryption_key_notice(env_data: dict) -> None:
         print()
         print(f"    SHS_CREDENTIAL_ENCRYPTION_KEY={key}")
     else:
-        print(_yellow("No SHS_CREDENTIAL_ENCRYPTION_KEY is set in .env — nothing to record."))
+        print(_yellow("No SHS_CREDENTIAL_ENCRYPTION_KEY is set in .env. Nothing to record."))
     print()
 
 
@@ -2416,7 +2416,7 @@ def cmd_restore_db(
 
     try:
         if context == "host":
-            # Stop API/UI before dropping the schema — a live API reconnects
+            # Stop API/UI before dropping the schema, a live API reconnects
             # to postgres mid-restore (pg_terminate_backend only kills current
             # connections) and reads/writes a half-restored schema. The
             # pre-restore snapshot above is the recovery net if this fails.
@@ -2512,10 +2512,10 @@ def cmd_restore_db(
 
     ok("Database restored")
     _verify_post_restore(context, env_file, db_file)
-    # .env (and its encryption key) is intentionally left untouched — the key
+    # .env (and its encryption key) is intentionally left untouched, the key
     # is never stored in the backup. The preflight already gated key mismatch.
 
-    # API/UI were stopped for exclusive DB access — bring them back up.
+    # API/UI were stopped for exclusive DB access, bring them back up.
     if context == "host":
         info("Restarting API/UI...")
         env_data2 = read_env(env_file)
@@ -2533,14 +2533,14 @@ def cmd_restore_db(
             )
     else:
         # Provisioning/grants/RLS re-apply in the container ENTRYPOINT, so the
-        # restore flow ends with a container restart — supervisorctl restart
+        # restore flow ends with a container restart, supervisorctl restart
         # is not enough. Until then the restricted role authenticates but every
         # table access is permission-denied → sanitized 500s (fail-closed).
         warn("Restart this container from the host now to finish the restore.")
         print(f"    {_bold('docker restart <container>')}   {_dim('(or stop/start the pod on RunPod)')}")
         if _app_db_url(env_data):
             warn(
-                "Until the restart, API requests fail with sanitized 500s — "
+                "Until the restart, API requests fail with sanitized 500s, "
                 "the restore dropped the restricted role's grants; boot re-applies them."
             )
 
@@ -2579,7 +2579,7 @@ def cmd_restore(
             db_name = "selfhost_studio"
 
             if context == "host":
-                # Stop API/UI before dropping the schema — see cmd_restore_db.
+                # Stop API/UI before dropping the schema, see cmd_restore_db.
                 # A live API reconnects mid-restore and reads a half-restored
                 # schema; the pre-restore snapshot above is the recovery net.
                 info("Stopping API/UI for exclusive DB access...")
@@ -2668,7 +2668,7 @@ def cmd_restore(
                     )
             ok("Database restored")
             _verify_post_restore(context, env_file, db_file)
-            # .env (and its encryption key) is intentionally left untouched — the
+            # .env (and its encryption key) is intentionally left untouched, the
             # key is never stored in the backup. Preflight gated key mismatch.
         else:
             warn(f"No database.sql in {restore_dir}")
@@ -2684,7 +2684,7 @@ def cmd_restore(
         else:
             warn(f"No orgs.tar.gz in {restore_dir}")
 
-    # API/UI were stopped for exclusive DB access — bring them back up.
+    # API/UI were stopped for exclusive DB access, bring them back up.
     if context == "host":
         print()
         info("Restarting API/UI...")
@@ -2812,7 +2812,7 @@ def cmd_upgrade(context: str, env_file: Path) -> None:
     run(compose_cmd(env_file) + ["pull"], timeout=300)
     ok("Images pulled")
 
-    # Restart — reapply scale flags + --remove-orphans so replica counts survive
+    # Restart, reapply scale flags + --remove-orphans so replica counts survive
     # the upgrade and stale containers from the old version are cleaned up.
     info("Restarting services...")
     env_data = read_env(env_file)
@@ -2870,7 +2870,7 @@ def _detect_install_method() -> str:
     if marker.exists():
         return marker.read_text().strip()
 
-    # uv tool install — path contains uv/tools, no pip module available
+    # uv tool install, path contains uv/tools, no pip module available
     if "uv/tools" in str(pkg_dir).replace("\\", "/"):
         return "uv"
 
@@ -2882,7 +2882,7 @@ def _detect_install_method() -> str:
     if "Cellar" in str(pkg_dir) or "homebrew" in str(pkg_dir).lower():
         return "brew"
 
-    # Inside a git repo — dev mode
+    # Inside a git repo, dev mode
     if (pkg_dir / ".git").exists() or (pkg_dir.parent / ".git").exists():
         return "dev"
 
@@ -2890,7 +2890,7 @@ def _detect_install_method() -> str:
 
 
 def cmd_self_update(context: str) -> None:
-    """Update studio-console — delegates to the correct mechanism for the install method."""
+    """Update studio-console, delegates to the correct mechanism for the install method."""
     import json
     import os
     import shutil
@@ -2905,14 +2905,14 @@ def cmd_self_update(context: str) -> None:
 
     if context in ("container", "runpod"):
         warn("studio-console is baked into the container image.")
-        warn("Update by pulling a new image tag — not via self-update.")
+        warn("Update by pulling a new image tag, not via self-update.")
         return
 
     method = _detect_install_method()
     info(f"Current version: {__version__}  (installed via {method})")
 
     if method == "dev":
-        warn("Running from source — use git pull to update.")
+        warn("Running from source. Use git pull to update.")
         return
 
     if method == "brew":
