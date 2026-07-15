@@ -54,15 +54,15 @@ The wizard creates `~/.studio/` containing `.env` (0600), `docker-compose.yml`, 
 ~/.studio/
 ├── .env, .bootstrapped, docker-compose.yml, nginx/
 ├── db/         postgres data         (SHS_DB_DATA)
-├── storage/    orgs, uploads, outputs (SHS_STORAGE_ROOT — mounted at /workspace in containers)
+├── storage/    orgs, uploads, outputs (SHS_STORAGE_ROOT, mounted at /workspace in containers)
 ├── models/     model files            (SHS_MODELS_ROOT)
 └── backups/    local DB dumps         (SHS_BACKUP_ROOT)
 ```
 
-Each data subdir is its own env var, so a cloud deploy can repoint individual roots at CloudSQL, GCS, or a network volume without changing code. **Protect this directory and never delete `.env`** — two of its values cannot be regenerated:
+Each data subdir is its own env var, so a cloud deploy can repoint individual roots at CloudSQL, GCS, or a network volume without changing code. **Protect this directory and never delete `.env`.** Two of its values cannot be regenerated:
 
-- `SHS_CREDENTIAL_ENCRYPTION_KEY` — losing it makes all stored provider API keys unrecoverable.
-- `POSTGRES_PASSWORD` — set on first DB init; the live database keeps using this value, so a regenerated one will lock the API out.
+- `SHS_CREDENTIAL_ENCRYPTION_KEY`: losing it makes all stored provider API keys unrecoverable.
+- `POSTGRES_PASSWORD`: set on first DB init; the live database keeps using this value, so a regenerated one will lock the API out.
 
 Back both up separately (password manager, secrets vault) so you can recover if the host or `.env` is ever lost.
 
@@ -81,7 +81,7 @@ Full list of supported environment variables in [docs/env-vars.md](docs/env-vars
 
 ## Run the Full image
 
-The **Full** image (`studio-full`) is a single self-contained container — bundled Postgres, API, UI, and workers under supervisord. No Compose stack, no external database. `launch-full` runs it on your machine and drops you into its in-container console.
+The **Full** image (`studio-full`) is a single self-contained container with bundled Postgres, API, UI, and workers under supervisord. No Compose stack, no external database. `launch-full` runs it on your machine and drops you into its in-container console.
 
 ```sh
 # Launch (defaults to the latest tag; workspace defaults to ~/.studio, shared with Split)
@@ -91,13 +91,13 @@ studio-console launch-full
 studio-console launch-full --tag 1.2.4 --workspace ~/.studio-full
 ```
 
-The workspace (mounted at `/workspace`) holds the generated `.env`, the Postgres data dir, and org files — it persists across restarts. You're prompted once for a supervisor username/password; the console remembers them and re-injects on every launch.
+The workspace (mounted at `/workspace`) holds the generated `.env`, the Postgres data dir, and org files; it persists across restarts. You're prompted once for a supervisor username/password; the console remembers them and re-injects on every launch.
 
 > **Do not point Full at an existing Split `~/.studio` workspace** unless you mean to share it. Split and Full share the same `.env`/encryption key but **must never run concurrently** against the same data. Use `--workspace` to keep them separate.
 
 ### Re-entering the console after you exit
 
-Exiting the console **does not stop the container** — it keeps running. `launch-full` won't re-attach to an already-running container; instead, exec back in from the host:
+Exiting the console **does not stop the container**; it keeps running. `launch-full` won't re-attach to an already-running container; instead, exec back in from the host:
 
 ```sh
 docker exec -it studio-full studio-console        # re-open the in-container menu
@@ -170,7 +170,7 @@ Backups land in `~/.studio/backups/studio-YYYYMMDD_HHMMSS/`.
 Images → Upgrade
 ```
 
-Pulls the latest tag from GHCR, updates `SHS_STUDIO_VERSION` in `.env`, and restarts all services. If the new version's major doesn't match your database's major, the upgrade is blocked with a clear message — see [docs/architecture.md](docs/architecture.md#major-version-boundary-detection).
+Pulls the latest tag from GHCR, updates `SHS_STUDIO_VERSION` in `.env`, and restarts all services. If the new version's major doesn't match your database's major, the upgrade is blocked with a clear message. See [docs/architecture.md](docs/architecture.md#major-version-boundary-detection).
 
 **studio-console itself:**
 
@@ -218,10 +218,10 @@ For the Full or Core image, run operational subcommands through `docker exec stu
 
 ## Further reading
 
-- **[Architecture](docs/architecture.md)** — file layout, state flow, Compose wiring, first-boot, internals (wizard vs init, orphan workers, backup format, major-version detection, deployment contexts).
-- **[Environment variables](docs/env-vars.md)** — every `SHS_*` and supporting var.
-- **[Public hostname topology](docs/topology.md)** — single vs split hostnames, Cloudflare tunnel + Access, IP restrictions.
-- **[VPS + RunPod deployments](docs/vps-runpod.md)** — hybrid setups with GPU worker pods on RunPod.
+- **[Architecture](docs/architecture.md)**: file layout, state flow, Compose wiring, first-boot, internals (wizard vs init, orphan workers, backup format, major-version detection, deployment contexts).
+- **[Environment variables](docs/env-vars.md)**: every `SHS_*` and supporting var.
+- **[Public hostname topology](docs/topology.md)**: single vs split hostnames, Cloudflare tunnel + Access, IP restrictions.
+- **[VPS + RunPod deployments](docs/vps-runpod.md)**: hybrid setups with GPU worker pods on RunPod.
 
 ---
 
