@@ -16,7 +16,7 @@ Variables that have no defaults and must be present before startup.
 | `SHS_JWT_SECRET_KEY` | API | JWT signing secret. 32+ random chars. |
 | `SHS_WORKER_SHARED_SECRET` | API, workers | Shared secret for worker authentication. 32+ random chars. |
 | `SHS_CREDENTIAL_ENCRYPTION_KEY` | API | AES key for stored provider credentials. 32+ random chars. |
-| `SHS_DATABASE_URL` | API | PostgreSQL connection URL. Format: `postgresql+asyncpg://user:pass@host:port/db`. |
+| `SHS_DATABASE_URL` | API | PostgreSQL connection URL. Format: `postgresql+asyncpg://user:pass@host:port/db`. For `launch-core`, set this in the environment to skip the Database prompt and script an unattended boot against a remote Postgres. |
 | `POSTGRES_PASSWORD` | Postgres | Database superuser password. |
 | `SHS_API_BASE_URL` | UI, non-Docker workers | API base URL (`http://host:port`). Docker workers use `http://api:8000` hardcoded in compose. Required for UI and for workers running outside Docker. |
 | `SHS_PUBLIC_BASE_URL` | All workers | Publicly reachable URL for external API callbacks and file downloads. Must be accessible from the internet. |

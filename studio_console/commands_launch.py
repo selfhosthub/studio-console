@@ -381,13 +381,20 @@ def _wait_pg_ready(attempts: int = 30, interval: int = 2) -> bool:
 def _resolve_core_db_url(engine_image: str, workspace: Path) -> str | None:
     """Return SHS_DATABASE_URL for core, provisioning as chosen.
 
-    Precedence: an already-persisted URL is reused silently. Otherwise a
-    three-way prompt: enter a URL, spin up the pinned sidecar, or defer.
-    Returns None to mean "defer — do not launch core yet".
+    Precedence: a persisted URL, then SHS_DATABASE_URL from the environment (so a
+    cloud Postgres can be scripted, same as the supervisor creds above), then a
+    three-way prompt: enter a URL, spin up the sidecar, or defer.
+    Returns None to mean "defer, do not launch core yet".
     """
     state = _load_state(CORE_STATE_FILE)
     if state.get("SHS_DATABASE_URL"):
         return state["SHS_DATABASE_URL"]
+
+    env_url = os.environ.get("SHS_DATABASE_URL", "").strip()
+    if env_url:
+        state["SHS_DATABASE_URL"] = env_url
+        _save_state(state, CORE_STATE_DIR, CORE_STATE_FILE)
+        return env_url
 
     info("Core uses an external PostgreSQL. Choose how to supply it:")
     print()
