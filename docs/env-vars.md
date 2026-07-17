@@ -103,7 +103,7 @@ Managed by studio-console via `docker-compose.override.yml`. Not set in `.env` d
 | `SHS_WORKSPACE_ROOT` | `/workspace` | Container-side workspace path. Hardcoded to `/workspace` in Docker compose. Set to an absolute host path for native (non-Docker) workers. |
 | `SHS_WORKSPACE_HOST` | `~/.studio` | Host-side directory mounted as `/workspace` in Docker. Required. |
 | `SHS_STORAGE_BACKEND` | `local` | Storage backend. Currently only `local`. |
-| `SHS_COMFYUI_URL` | `""` | ComfyUI server URL. Required when running ComfyUI workers. |
+| `SHS_COMFYUI_URL` | `""` | ComfyUI server URL, as reachable from the worker container. Host process on the same machine: `http://host.docker.internal:8188`. Container on the stack's Docker network: `http://<container-name>:8188` (a standalone container must join the network, e.g. `docker run --network studio_prod-network`). Another machine: its LAN or public URL. |
 | `SHS_WHISPER_MODEL` | `base` | Whisper model for subtitle transcription: `tiny`, `base`, `small`, `medium`, `large`, `turbo`. |
 | `HF_HOME` | — | HuggingFace model cache directory. Docker audio workers set this to `$WORKSPACE_HOST/models/huggingface`. |
 
