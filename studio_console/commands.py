@@ -575,6 +575,7 @@ def _submenu_advanced(context: str, env_file: Path) -> None:
     """Advanced submenu, scale API/UI, per-service ops, Cloudflare ops."""
     options = [
         f"Scale API/UI      {_dim('set replica count, enable/disable nginx LB')}",
+        f"Worker kit        {_dim('setup commands for a worker on another machine')}",
         f"Start one         {_dim('start a stopped service')}",
         f"Stop one          {_dim('stop a running service')}",
         f"Restart one       {_dim('restart a single service')}",
@@ -585,27 +586,31 @@ def _submenu_advanced(context: str, env_file: Path) -> None:
     idx = _interactive_single("Advanced", options, default=0)
     if idx == 0:
         _cmd_scale_api_ui(env_file)
-    elif idx in (1, 2, 3):
+    elif idx == 1:
+        from .commands_kit import cmd_worker_kit
+
+        cmd_worker_kit(context, env_file)
+    elif idx in (2, 3, 4):
         # Service names (not container names): each action targets a whole
         # service type, restarting/stopping all its replicas at once.
         services = _get_running_services(context, env_file)
         if not services:
             warn("No services found")
         else:
-            action = {1: "Start", 2: "Stop", 3: "Restart"}[idx]
+            action = {2: "Start", 3: "Stop", 4: "Restart"}[idx]
             pick = _interactive_single(f"{action} which service?", services, default=0)
             svc = services[pick]
-            if idx == 1:
+            if idx == 2:
                 run(compose_cmd(env_file) + ["start", svc], timeout=60)
-            elif idx == 2:
+            elif idx == 3:
                 run(compose_cmd(env_file) + ["stop", svc], timeout=60)
             else:
                 cmd_restart(context, env_file, svc)
-    elif idx == 4:
-        cmd_show_config(context, env_file)
     elif idx == 5:
-        cmd_db_role(context, env_file)
+        cmd_show_config(context, env_file)
     elif idx == 6:
+        cmd_db_role(context, env_file)
+    elif idx == 7:
         _submenu_cloudflare(context, env_file)
 
 

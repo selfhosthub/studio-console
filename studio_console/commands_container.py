@@ -63,6 +63,7 @@ def container_menu(context: str, env_file: Path) -> None:
         (f"Config          {_dim('show .env (secrets masked)')}", "config"),
     ]
     actions.append((f"Workers         {_dim('scale general / transfer')}", "workers"))
+    actions.append((f"Worker kit      {_dim('setup commands for a GPU/remote worker')}", "workerkit"))
     actions.append((f"DB role         {_dim('restricted runtime role (RLS)')}", "dbrole"))
     if shape == "full":
         actions.append((f"Backup          {_dim('backup · restore')}", "backup"))
@@ -98,6 +99,10 @@ def container_menu(context: str, env_file: Path) -> None:
                     cmd_show_config(context, env_file)
             elif action == "workers":
                 _cmd_workers()
+            elif action == "workerkit":
+                from .commands_kit import cmd_worker_kit
+
+                cmd_worker_kit(context, env_file)
             elif action == "dbrole":
                 cmd_db_role(context, env_file)
             elif action == "backup":

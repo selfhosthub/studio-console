@@ -120,7 +120,9 @@ Workers connect outbound to API via SHS_API_BASE_URL + SHS_WORKER_SHARED_SECRET
       api-1      api-2     api-3    ← numbered services from override
 ```
 
-When `CONSOLE_API_REPLICAS > 1` or `CONSOLE_UI_REPLICAS > 1`, the console writes `docker-compose.override.yml` with numbered services and parks the bare `api`/`ui` services under a disabled profile. nginx upstream blocks point to the numbered names. The override is auto-generated on every wizard save; single-replica setups delete it if present.
+When `CONSOLE_API_REPLICAS > 1` or `CONSOLE_UI_REPLICAS > 1`, the console writes `docker-compose.override.yml` with numbered services and parks the bare `api`/`ui` services under a disabled profile. nginx upstream blocks point to the numbered names. The override is auto-generated on every wizard save; setups needing no override delete it if present.
+
+The override also carries the audio worker's GPU grant: when `CONSOLE_AUDIO_GPU_DEVICE` is set (wizard prompt on selecting the Audio worker), a `worker-audio` block adds an nvidia device reservation (`all` or a specific `device_ids`). Empty = no reservation, the worker runs on CPU.
 
 ## First-boot sequence
 

@@ -94,7 +94,7 @@ Managed by studio-console via `docker-compose.override.yml`. Not set in `.env` d
 | `SHS_AUDIO_WORKERS` | — | Audio worker instance count. |
 | `SHS_VIDEO_WORKERS` | — | Video worker instance count. |
 | `SHS_COMFYUI_IMAGE_WORKERS` | — | ComfyUI image worker count. |
-| `SHS_COMFYUI_VIDEO_WORKERS` | — | ComfyUI video worker count. |
+| `CONSOLE_AUDIO_GPU_DEVICE` | - | Audio worker GPU: empty = CPU, `all` = all GPUs, or a device id like `0`. Written into `docker-compose.override.yml` as an nvidia device reservation. |
 
 ### Worker Infrastructure
 

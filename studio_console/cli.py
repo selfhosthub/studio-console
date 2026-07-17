@@ -26,6 +26,7 @@ from .commands import (
     config_menu,
 )
 from .commands_container import container_menu
+from .commands_kit import cmd_worker_kit
 from .commands_launch import cmd_launch_core, cmd_launch_full, cmd_set_core_db_url
 from .env import _workspace_dir, detect_context, env_path
 from .tui import NavBack, NavExit
@@ -67,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_logs.add_argument("service", nargs="?", default=None)
 
     sub.add_parser("workers", help="List/scale workers")
+    sub.add_parser("worker-kit", help="Print setup commands for a worker on another machine or GPU host")
     sub.add_parser("reset-password", help="Reset admin password")
 
     p_backup = sub.add_parser("backup", help="Backup database + files")
@@ -138,6 +140,7 @@ def main() -> None:
         ),
         "logs": lambda: cmd_logs(context, ef, args.service),
         "workers": lambda: cmd_workers(context, ef),
+        "worker-kit": lambda: cmd_worker_kit(context, ef),
         "reset-password": lambda: cmd_reset_password(context, ef),
         "backup": lambda: cmd_backup(context, ef, args.what),
         "restore": lambda: cmd_restore(context, ef, args.path),

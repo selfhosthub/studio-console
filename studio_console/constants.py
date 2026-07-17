@@ -5,13 +5,52 @@
 # Component definitions
 # ---------------------------------------------------------------------------
 
-ALL_COMPONENTS = [
-    "PostgreSQL",
-    "API",
-    "UI",
-    "General worker",
-    "Transfer worker",
+# One row per worker type. Component/profile/image/scale mappings below derive
+# from this so a worker is added or renamed in exactly one place.
+WORKER_CATALOG: list[dict] = [
+    {
+        "component": "General worker",
+        "profile": "worker-general",
+        "image": "studio-worker-general",
+        "worker_type": "general",
+        "scale_var": "SHS_GENERAL_WORKERS",
+        "gpu": None,
+    },
+    {
+        "component": "Transfer worker",
+        "profile": "worker-transfer",
+        "image": "studio-worker-transfer",
+        "worker_type": "transfer",
+        "scale_var": "SHS_TRANSFER_WORKERS",
+        "gpu": None,
+    },
+    {
+        "component": "Audio worker",
+        "profile": "worker-audio",
+        "image": "studio-worker-audio",
+        "worker_type": "audio",
+        "scale_var": "SHS_AUDIO_WORKERS",
+        "gpu": "TTS inference. CUDA GPU recommended (8+ GB VRAM); falls back to CPU.",
+    },
+    {
+        "component": "Video worker",
+        "profile": "worker-video",
+        "image": "studio-worker-video",
+        "worker_type": "video",
+        "scale_var": "SHS_VIDEO_WORKERS",
+        "gpu": None,
+    },
+    {
+        "component": "ComfyUI image worker",
+        "profile": "worker-comfyui-image",
+        "image": "studio-worker-comfyui",
+        "worker_type": "comfyui-image",
+        "scale_var": "SHS_COMFYUI_IMAGE_WORKERS",
+        "gpu": "Proxy only; the GPU lives in your ComfyUI server (SHS_COMFYUI_URL).",
+    },
 ]
+
+ALL_COMPONENTS = ["PostgreSQL", "API", "UI"] + [w["component"] for w in WORKER_CATALOG]
 
 CORE_DEFAULTS = {"PostgreSQL", "API", "UI"}
 
@@ -24,14 +63,7 @@ APP_DB_ROLE = "shs_app"
 # Component → compose profile mapping
 # ---------------------------------------------------------------------------
 
-COMPONENT_TO_PROFILE = {
-    "General worker": "worker-general",
-    "Transfer worker": "worker-transfer",
-    "Audio worker": "worker-audio",
-    "Video worker": "worker-video",
-    "ComfyUI image worker": "worker-comfyui-image",
-    "ComfyUI video worker": "worker-comfyui-image",
-}
+COMPONENT_TO_PROFILE = {w["component"]: w["profile"] for w in WORKER_CATALOG}
 
 # ---------------------------------------------------------------------------
 # Component → Docker image mapping
@@ -40,12 +72,7 @@ COMPONENT_TO_PROFILE = {
 COMPONENT_TO_IMAGE = {
     "API": "studio-api",
     "UI": "studio-ui",
-    "General worker": "studio-worker-general",
-    "Transfer worker": "studio-worker-transfer",
-    "Audio worker": "studio-worker-audio",
-    "Video worker": "studio-worker-video",
-    "ComfyUI image worker": "studio-worker-comfyui",
-    "ComfyUI video worker": "studio-worker-comfyui",
+    **{w["component"]: w["image"] for w in WORKER_CATALOG},
 }
 
 # Image name → (Dockerfile relative to repo root, build context)
@@ -68,24 +95,10 @@ THIRD_PARTY_IMAGES = [
 # ---------------------------------------------------------------------------
 
 # Component name → env var name
-SCALE_VARS: dict[str, str] = {
-    "General worker": "SHS_GENERAL_WORKERS",
-    "Transfer worker": "SHS_TRANSFER_WORKERS",
-    "Audio worker": "SHS_AUDIO_WORKERS",
-    "Video worker": "SHS_VIDEO_WORKERS",
-    "ComfyUI image worker": "SHS_COMFYUI_IMAGE_WORKERS",
-    "ComfyUI video worker": "SHS_COMFYUI_VIDEO_WORKERS",
-}
+SCALE_VARS: dict[str, str] = {w["component"]: w["scale_var"] for w in WORKER_CATALOG}
 
 # Env var name → compose service name (for --scale flags)
-SCALE_PROFILES: dict[str, str] = {
-    "SHS_GENERAL_WORKERS": "worker-general",
-    "SHS_TRANSFER_WORKERS": "worker-transfer",
-    "SHS_AUDIO_WORKERS": "worker-audio",
-    "SHS_VIDEO_WORKERS": "worker-video",
-    "SHS_COMFYUI_IMAGE_WORKERS": "worker-comfyui-image",
-    "SHS_COMFYUI_VIDEO_WORKERS": "worker-comfyui-image",
-}
+SCALE_PROFILES: dict[str, str] = {w["scale_var"]: w["profile"] for w in WORKER_CATALOG}
 
 # Reverse: env var name → component name (for restoring state from .env)
 SCALE_VARS_REVERSE: dict[str, str] = {v: k for k, v in SCALE_VARS.items()}
@@ -143,8 +156,8 @@ ENV_SECTIONS = {
         "CONSOLE_MODELS_PATH",
         "SHS_WHISPER_MODEL",
         "HF_HOME",
-        "SHS_GENERAL_WORKERS",
-        "SHS_TRANSFER_WORKERS",
+        "CONSOLE_AUDIO_GPU_DEVICE",
+        *[w["scale_var"] for w in WORKER_CATALOG],
     ],
     "Scaling": [
         "CONSOLE_API_REPLICAS",

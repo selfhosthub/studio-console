@@ -230,7 +230,6 @@ services:
         max-file: "3"
 
   # ComfyUI worker (proxy to operator-managed ComfyUI server)
-  # Deploy with SHS_WORKER_TYPE=comfyui-image (default) or SHS_WORKER_TYPE=comfyui-video
   worker-comfyui-image:
     image: ghcr.io/selfhosthub/studio-worker-comfyui:${SHS_STUDIO_VERSION:?SHS_STUDIO_VERSION is required - set in .env}
 

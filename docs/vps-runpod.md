@@ -58,7 +58,6 @@ GPU workers run as separate RunPod pods, each polling the VPS API for jobs:
 | Video | `selfhosthub/studio-worker-video` | `video` |
 | Audio (TTS) | `selfhosthub/studio-worker-audio` | `audio` |
 | ComfyUI (image) | `selfhosthub/studio-worker-comfyui` | `comfyui-image` |
-| ComfyUI (video) | `selfhosthub/studio-worker-comfyui` | `comfyui-video` |
 
 Workers are stateless pollers. They connect to the API via `SHS_API_BASE_URL`, authenticate with `SHS_WORKER_SHARED_SECRET`, pick up jobs, process them, and push results back. No shared filesystem between VPS and RunPod is required.
 
@@ -71,7 +70,6 @@ Workers are stateless pollers. They connect to the API via `SHS_API_BASE_URL`, a
 | `shs-video` | None (CPU-only) | Any instance | 2 CPU / 4 GB RAM | FFmpeg + Whisper STT. CPU-bound. Any cheap pod works. |
 | `shs-audio` (Chatterbox TTS) | Light GPU | RTX 3060 / 3080 | 8 GB VRAM | MPS (Apple Silicon) works for local dev. Inference is fast on consumer GPUs. |
 | `shs-comfyui` (image gen) | VRAM-hungry | RTX 3090 / 4090 | RTX 3080 (10 GB VRAM) | SDXL and Flux models need 10+ GB VRAM. 24 GB recommended. |
-| `shs-comfyui` (video gen) | Heavy | RTX 4090 / A100 | RTX 3090 (24 GB VRAM) | Video generation models are the most VRAM-hungry. 24 GB minimum, 40+ GB ideal. |
 
 **Cost-performance sweet spot:** An RTX 3090 pod on RunPod handles audio + image generation well. Only video generation benefits from stepping up to a 4090 or A100.
 
@@ -102,6 +100,8 @@ Network volumes persist model downloads across pod restarts. Without one, every 
 
 Create a pod template on RunPod for each worker type you need.
 
+> **Shortcut:** `studio-console worker-kit` (also under Advanced in the menu) prints a paste-ready `docker run` command and these template values with your real URL, secret, and version filled in.
+
 ### Image
 
 Use the GHCR image for the worker type:
@@ -117,7 +117,7 @@ Use the GHCR image for the worker type:
 | `SHS_API_BASE_URL` | `https://studio.example.com` | Public URL of your VPS API. Must be reachable from RunPod. |
 | `SHS_WORKER_SHARED_SECRET` | *(copy from VPS `.env`)* | Must match the API exactly. |
 | `SHS_WORKSPACE_ROOT` | `/workspace` | Mount point for the network volume. |
-| `SHS_WORKER_TYPE` | `video`, `audio`, `comfyui-image`, or `comfyui-video` | Which job queue this worker polls. |
+| `SHS_WORKER_TYPE` | `video`, `audio`, or `comfyui-image` | Which job queue this worker polls. |
 
 ### Optional environment variables
 
