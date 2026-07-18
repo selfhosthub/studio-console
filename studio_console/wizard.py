@@ -223,10 +223,16 @@ def _prompt_worker_extras(state: SetupState, workers: list[str]) -> None:
             state.comfyui_url or "http://host.docker.internal:8188",
         )
     if "Audio worker" in workers:
-        state.audio_gpu_device = _prompt(
-            "Audio worker GPU (blank = CPU, 'all', or device id like 0)",
-            state.audio_gpu_device,
-        ).strip()
+        if sys.platform == "darwin":
+            # Docker on macOS has no nvidia driver; a reservation breaks compose up
+            if state.audio_gpu_device:
+                info("Audio worker GPU: cleared (no NVIDIA GPU support on macOS, using CPU)")
+            state.audio_gpu_device = ""
+        else:
+            state.audio_gpu_device = _prompt(
+                "Audio worker GPU ('all', a CUDA device id, or blank = CPU)",
+                state.audio_gpu_device,
+            ).strip()
 
 
 def _section_worker_scaling(state: SetupState) -> None:

@@ -77,7 +77,7 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
     gpu = ""
     extra_env: list[tuple[str, str]] = []
     if entry["worker_type"] == "audio":
-        gpu = _prompt("GPU (blank = CPU, 'all', or device id like 0)", "").strip()
+        gpu = _prompt("GPU ('all', a CUDA device id, or blank = CPU)", "").strip()
         extra_env.append(("HF_HOME", "/workspace/models/huggingface"))
     elif entry["worker_type"] == "video":
         extra_env.append(
