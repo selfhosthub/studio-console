@@ -772,6 +772,13 @@ def _submenu_cloudflare(context: str, env_file: Path) -> None:
         if not tunnel_token:
             warn("No tunnel token set. Run 'Full setup (API)' first.")
             return
+        from .cloudflare.cf_wizard import ingress_shape_mismatch
+        from .env import detect_shape
+
+        mismatch = ingress_shape_mismatch(detect_shape(env_file) or "split", env_data)
+        if mismatch:
+            error(mismatch)
+            return
         if "cloudflared" not in profiles:
             new_profiles = (profiles + ",cloudflared").strip(",")
             set_env_value(env_file, "COMPOSE_PROFILES", new_profiles)
@@ -945,6 +952,15 @@ def cmd_start(context: str, env_file: Path) -> None:
     if context == "host":
         _validate_env(env_file)
         env_data = read_env(env_file)
+
+        if "cloudflared" in env_data.get("COMPOSE_PROFILES", ""):
+            from .cloudflare.cf_wizard import ingress_shape_mismatch
+            from .env import detect_shape
+
+            mismatch = ingress_shape_mismatch(detect_shape(env_file) or "split", env_data)
+            if mismatch:
+                error(mismatch)
+                return False
 
         target_tag = env_data.get("SHS_STUDIO_VERSION", "")
         if mv.check_and_block(

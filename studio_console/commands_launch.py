@@ -256,6 +256,12 @@ def cmd_launch_full(context: str, tag: str | None = None, workspace: Path | None
         return False
 
     heading("Launch Studio (full)")
+    from .cloudflare.cf_wizard import ingress_shape_mismatch
+
+    mismatch = ingress_shape_mismatch("full", dict(os.environ))
+    if mismatch:
+        error(mismatch)
+        return False
     tag = tag or DEFAULT_TAG
     image_ref = f"{DEFAULT_IMAGE}:{tag}"
 
@@ -511,6 +517,12 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
         return False
 
     heading("Launch Studio (core)")
+    from .cloudflare.cf_wizard import ingress_shape_mismatch
+
+    mismatch = ingress_shape_mismatch("core", dict(os.environ))
+    if mismatch:
+        error(mismatch)
+        return False
     tag = tag or DEFAULT_TAG
     image_ref = f"{CORE_IMAGE}:{tag}"
 

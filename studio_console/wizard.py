@@ -1870,6 +1870,10 @@ def wizard_non_interactive(context: str, env_file: Path) -> bool:
             ("CLOUDFLARE_API_TOKEN", cf_api_token),
         ]:
             set_env_value(env_file, key, val)
+        # Carry the reused tunnel's recorded ingress origin into .env.
+        cf_ingress_origin = g("CLOUDFLARE_INGRESS_ORIGIN", "")
+        if cf_ingress_origin:
+            set_env_value(env_file, "CLOUDFLARE_INGRESS_ORIGIN", cf_ingress_origin)
     elif needs_cf_bootstrap:
         # Persist the API token + account id + URLs first so cf_full_setup can
         # read them. The tunnel id/token will be written by cf_full_setup itself.

@@ -44,6 +44,40 @@ from .cf_api import CloudflareAPI, CloudflareError
 _NON_INTERACTIVE = False
 
 
+# .env key recording the origin the wizard last pushed to the tunnel.
+INGRESS_ORIGIN_KEY = "CLOUDFLARE_INGRESS_ORIGIN"
+
+
+def expected_ingress_origin(shape: str, nginx_port: str = "") -> str:
+    """Ingress origin a tunnel must target for *shape*."""
+    host = "localhost" if shape in ("core", "full") else "nginx"
+    return f"http://{host}:{nginx_port.strip() or '80'}"
+
+
+def ingress_shape_mismatch(shape: str, env: dict) -> str | None:
+    """Refusal text when the recorded tunnel ingress origin does not fit *shape*.
+
+    Returns None when there is no recorded origin, no tunnel token, or the
+    origins match. Never re-syncs ingress: a boot on one machine would silently
+    steal the tunnel from another.
+    """
+    recorded = (env.get(INGRESS_ORIGIN_KEY) or "").strip()
+    token = (env.get("CLOUDFLARE_TUNNEL_TOKEN") or "").strip()
+    if not recorded or not token:
+        return None
+    expected = expected_ingress_origin(shape, env.get("SHS_NGINX_PORT", ""))
+    if recorded == expected:
+        return None
+    recorded_shape = "split" if urlparse(recorded).hostname == "nginx" else "core/full"
+    return (
+        f"Refusing to launch: the reused tunnel's ingress targets {recorded} "
+        f"(written for {recorded_shape}), but {shape} needs {expected}. "
+        f"Booting anyway would 502 on the public hostname. "
+        f"Rerun the Cloudflare wizard for {shape}, or use the cf-reuse profile "
+        f"that matches this tunnel."
+    )
+
+
 def _ingress_target(env_file: Path, hostname: str = "") -> str:
     """Tunnel ingress origin. Every shape targets the nginx front door, which
     path-routes api/ws vs ui. Split: nginx service. Core/full: localhost (nginx
@@ -578,6 +612,8 @@ def _step_routes(
     except CloudflareError as e:
         error(f"Failed to configure ingress: {e}")
         return None
+    # Record the origin this push wrote (all rules share it).
+    set_env_value(env_file, INGRESS_ORIGIN_KEY, _ingress_target(env_file))
 
     # DNS records — one CNAME per hostname. Existing non-tunnel records
     # trigger a confirm prompt before overwrite (operators may have other
@@ -1158,6 +1194,9 @@ def _push_tunnel_ingress(
             ok(f"Ingress: {rule['hostname']} → {rule['service']}")
     except CloudflareError as e:
         warn(f"Failed to push ingress: {e}")
+        return
+    # Record the origin this push wrote (all rules share it).
+    set_env_value(env_file, INGRESS_ORIGIN_KEY, _ingress_target(env_file))
 
 
 def _update_one_domain(cf: CloudflareAPI, env_file: Path, role: str) -> bool:
