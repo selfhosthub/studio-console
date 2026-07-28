@@ -40,6 +40,9 @@ services:
 
   api:
     image: ghcr.io/selfhosthub/studio-api:${SHS_STUDIO_VERSION:?SHS_STUDIO_VERSION is required - set in .env}
+    # Localhost-only API publish so native same-host workers can poll /internal/*.
+    ports:
+      - "127.0.0.1:8000:8000"
 
     env_file:
       - ${SHS_WORKSPACE_DIR}/.env
