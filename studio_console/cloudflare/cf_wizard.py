@@ -54,6 +54,20 @@ def _ingress_target(env_file: Path, hostname: str = "") -> str:
     return f"http://nginx:{nginx_port}"
 
 
+def _api_base_url(env_file: Path) -> str:
+    """Public API base URL. Split: CONSOLE_PUBLIC_API_BASE_URL only. Core/full:
+    same var, falling back to the derived SHS_PUBLIC_API_URL."""
+    env_data = read_env(env_file)
+    url = env_data.get("CONSOLE_PUBLIC_API_BASE_URL", "").rstrip("/")
+    if url.startswith("https://"):
+        return url
+    if detect_shape(env_file) in ("core", "full"):
+        url = env_data.get("SHS_PUBLIC_API_URL", "").rstrip("/")
+        if url.startswith("https://"):
+            return url
+    return ""
+
+
 def _is_non_interactive() -> bool:
     return _NON_INTERACTIVE
 
@@ -1124,7 +1138,7 @@ def _push_tunnel_ingress(
 
     hostnames: list[str] = []
     ui_url = env_data.get("SHS_PUBLIC_BASE_URL", "").rstrip("/")
-    api_url = env_data.get("CONSOLE_PUBLIC_API_BASE_URL", "").rstrip("/")
+    api_url = _api_base_url(env_file)
     if ui_url.startswith("https://"):
         hostnames.append(_parse_domain(ui_url)[0])
     if api_url.startswith("https://"):
@@ -1422,7 +1436,7 @@ def _cf_full_setup_impl(env_file: Path) -> bool:
     # creating anything so preflight can check all planned hostnames at once.
     env_data = read_env(env_file)
     ui_url = env_data.get("SHS_PUBLIC_BASE_URL", "").rstrip("/")
-    api_url = env_data.get("CONSOLE_PUBLIC_API_BASE_URL", "").rstrip("/")
+    api_url = _api_base_url(env_file)
     ip_mode = env_data.get("CONSOLE_IP_RESTRICT_MODE", "none")
 
     if not ui_url.startswith("https://"):

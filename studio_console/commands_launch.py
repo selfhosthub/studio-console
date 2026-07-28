@@ -217,16 +217,24 @@ def _build_run_cmd(
     """Assemble `docker run` from the manifest.
 
     *publish_internal* False publishes only ports without ``internal: true``
-    (core: expose nginx :80, keep api/ui/supervisor off the host).
+    (core: expose nginx :80, keep api/ui/supervisor off the host). Internal
+    ports with ``localhost_publish`` are always published on that bind address
+    (``SHS_PUBLISH_INTERNAL_BIND`` overrides it).
     *mounts* are extra ``-v`` specs (e.g. the consumed cf-token secret file).
     """
     cmd = ["docker", "run", "-d", "--name", container_name]
     if network:
         cmd += ["--network", network]
+    # Bind-address override for internal ports that carry localhost_publish.
+    bind_override = os.environ.get("SHS_PUBLISH_INTERNAL_BIND", "").strip()
     for port in manifest.get("ports", []):
+        c = port["container"]
+        if port.get("internal") and port.get("localhost_publish"):
+            bind = bind_override or port["localhost_publish"]
+            cmd += ["-p", f"{bind}:{c}:{c}"]
+            continue
         if not publish_internal and port.get("internal"):
             continue
-        c = port["container"]
         cmd += ["-p", f"{c}:{c}"]
     vol = manifest["volumes"][0]["container_path"]
     cmd += ["-v", f"{workspace}:{vol}"]
@@ -268,7 +276,9 @@ def cmd_launch_full(context: str, tag: str | None = None, workspace: Path | None
     _seed_first_boot_vars(workspace, creds)
     cf_token = _cf_token_mount(workspace, STATE_DIR)
     mounts = [f"{cf_token}:{CF_TOKEN_MOUNT}:ro"] if cf_token else None
-    cmd = _build_run_cmd(manifest, image_ref, creds, workspace, mounts=mounts)
+    cmd = _build_run_cmd(
+        manifest, image_ref, creds, workspace, publish_internal=False, mounts=mounts
+    )
 
     info(f"Starting {image_ref} (data: {workspace}) ...")
     if run(cmd, check=False).returncode != 0:
