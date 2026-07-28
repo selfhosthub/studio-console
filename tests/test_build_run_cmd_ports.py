@@ -1,8 +1,7 @@
 # tests/test_build_run_cmd_ports.py
 """_build_run_cmd port publishing across publish_internal and localhost_publish.
 
-Pure-function tests (no Docker). Run with `python -m pytest tests/` or
-standalone via `python tests/test_build_run_cmd_ports.py`.
+Pure-function tests (no Docker). Run with `make test`.
 
 Pins the contract: internal ports with localhost_publish are always published
 on the bind address (never bare), internal ports without it follow
@@ -74,20 +73,3 @@ def test_env_override_leaves_plain_internal_ports_alone() -> None:
         ]
     finally:
         del os.environ["SHS_PUBLISH_INTERNAL_BIND"]
-
-
-if __name__ == "__main__":
-    import sys
-    import traceback
-
-    failures = 0
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            try:
-                fn()
-                print(f"ok   {name}")
-            except Exception:
-                failures += 1
-                print(f"FAIL {name}")
-                traceback.print_exc()
-    sys.exit(1 if failures else 0)

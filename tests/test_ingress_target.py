@@ -1,8 +1,7 @@
 # tests/test_ingress_target.py
 """_ingress_target converges every shape on the nginx front door.
 
-Pure-function tests (no Docker/Cloudflare). Run with `python -m pytest tests/`
-or standalone via `python tests/test_ingress_target.py`.
+Pure-function tests (no Docker/Cloudflare). Run with `make test`.
 
 Regression guard: core/full previously returned localhost:8000/:3000, bypassing
 nginx, so a token-tunnel reused across shapes left stale ingress → 502. All
@@ -150,20 +149,3 @@ def test_split_ingress_unchanged(tmp_path: Path) -> None:
         {"hostname": "app.example.com", "service": "http://nginx:80"},
         {"hostname": "api.example.com", "service": "http://nginx:80"},
     ]
-
-
-if __name__ == "__main__":
-    import sys
-    import tempfile
-
-    failures = 0
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            with tempfile.TemporaryDirectory() as d:
-                try:
-                    fn(Path(d))
-                    print(f"ok   {name}")
-                except AssertionError as e:
-                    failures += 1
-                    print(f"FAIL {name}: {e}")
-    sys.exit(1 if failures else 0)

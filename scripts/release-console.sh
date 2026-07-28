@@ -152,6 +152,10 @@ if [[ "$BRANCH" != "main" ]]; then
 fi
 ok "on main"
 
+# Run the test suite; a failing suite aborts the release (dry-run included).
+uv run --group dev python -m pytest tests/ -q || fatal "test suite failed"
+ok "test suite green"
+
 # Tag must not already exist (locally or remotely) unless --force.
 TAG_EXISTS_LOCAL=0
 TAG_EXISTS_REMOTE=0

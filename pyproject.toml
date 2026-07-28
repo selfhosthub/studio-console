@@ -24,6 +24,11 @@ studio-console = "studio_console:main"
 Homepage = "https://github.com/selfhosthub/studio-console"
 Issues = "https://github.com/selfhosthub/studio-console/issues"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

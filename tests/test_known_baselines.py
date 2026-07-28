@@ -1,8 +1,7 @@
 # tests/test_known_baselines.py
 """Major-version classification across squash-and-stamp baselines.
 
-Pure-function tests (no Docker/Postgres). Run with `python -m pytest tests/`
-or standalone via `python tests/test_known_baselines.py`.
+Pure-function tests (no Docker/Postgres). Run with `make test`.
 
 The load-bearing case is `test_post_squash_prior_major_blocks`: a prior-major DB
 stamped to a SECOND baseline of that major must classify prior_major and the
@@ -83,24 +82,3 @@ def test_restore_preflight_blocks_post_squash_prior_major(monkeypatch, tmp_path)
 
     proceed = commands._restore_preflight("host", Path("/tmp/.env"), str(tmp_path / "x.sql"))
     assert proceed is False
-
-
-if __name__ == "__main__":
-    import sys
-    import traceback
-
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
-    failures = 0
-    for fn in fns:
-        params = fn.__code__.co_varnames[: fn.__code__.co_argcount]
-        if "monkeypatch" in params:
-            print(f"SKIP {fn.__name__} (needs pytest monkeypatch)")
-            continue
-        try:
-            fn()
-            print(f"PASS {fn.__name__}")
-        except Exception:
-            failures += 1
-            print(f"FAIL {fn.__name__}")
-            traceback.print_exc()
-    sys.exit(1 if failures else 0)
