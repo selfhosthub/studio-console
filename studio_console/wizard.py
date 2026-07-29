@@ -603,6 +603,12 @@ server {{
         proxy_set_header X-Forwarded-Proto $scheme;
     }}
 
+    # Worker control endpoints never ride the UI front door; workers use the
+    # localhost-published API port or the api hostname through the tunnel.
+    location ^~ /api/v1/internal/ {{
+        return 404;
+    }}
+
     location ~ ^/(api|ws|uploads)(/|$) {{
         proxy_pass http://studio_api;
         proxy_http_version 1.1;
@@ -891,6 +897,12 @@ server {
     }
 
     # API + WebSocket + static uploads (org media served by API)
+    # Worker control endpoints never ride the UI front door; workers use the
+    # localhost-published API port or the api hostname through the tunnel.
+    location ^~ /api/v1/internal/ {
+        return 404;
+    }
+
     location ~ ^/(api|ws|uploads)(/|$) {
         proxy_pass http://studio_api;
         proxy_http_version 1.1;
