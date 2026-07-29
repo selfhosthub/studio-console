@@ -1,12 +1,7 @@
 # tests/test_nginx_worker_control.py
-"""Every front-door nginx conf source 404s the worker control prefix.
-
-The conf has three sources: nginx/studio.conf.template (single-hostname file),
-_NGINX_CONF_TEMPLATE (inline fallback), and _render_split_nginx_conf (split).
-A block added to one source silently misses the others, so each is asserted
-here. The split api-hostname server block intentionally has no 404: it is the
-sanctioned worker path.
-"""
+"""Every front-door nginx conf source 404s the worker control prefix:
+nginx/studio.conf.template, _NGINX_CONF_TEMPLATE, and the split renderer's
+UI server block. The split api-hostname server block routes it."""
 
 from __future__ import annotations
 
