@@ -178,7 +178,7 @@ Pulls the latest tag from GHCR, updates `SHS_STUDIO_VERSION` in `.env`, and rest
 studio-console self-update
 ```
 
-`self-update` detects how Console was installed (uv, pip, or Homebrew) and upgrades in place.
+`self-update` detects how Console was installed (uv, pip, or Homebrew) and upgrades in place. Inside a Studio container it upgrades the bundled console the same way; recreating the container reverts to the version baked into the image.
 
 ---
 

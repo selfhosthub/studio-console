@@ -2919,6 +2919,18 @@ def _detect_install_method() -> str:
     return "curl"
 
 
+def _baked_console_version(release_json: "Path | None" = None) -> str:
+    """Version baked into the container image, from the build-time release metadata."""
+    import json
+    from pathlib import Path
+
+    path = release_json or Path("/tmp/.console-release.json")
+    try:
+        return json.loads(path.read_text()).get("tag_name", "").lstrip("v")
+    except (OSError, json.JSONDecodeError):
+        return ""
+
+
 def cmd_self_update(context: str) -> None:
     """Update studio-console, delegates to the correct mechanism for the install method."""
     import json
@@ -2934,8 +2946,18 @@ def cmd_self_update(context: str) -> None:
     from . import __version__
 
     if context in ("container", "runpod"):
-        warn("studio-console is baked into the container image.")
-        warn("Update by pulling a new image tag, not via self-update.")
+        info(f"Current version: {__version__}  (installed in the container)")
+        if shutil.which("uv") is None:
+            warn("uv not found in this container; update by pulling a new image tag.")
+            return
+        info("Updating via uv tool...")
+        run(["uv", "tool", "install", "--force", "studio-console"], timeout=120)
+        ok("Updated. Re-run studio-console to use the new version.")
+        baked = _baked_console_version()
+        if baked:
+            warn(f"Recreating the container reverts to the baked console ({baked}).")
+        else:
+            warn("Recreating the container reverts to the baked console version.")
         return
 
     method = _detect_install_method()
