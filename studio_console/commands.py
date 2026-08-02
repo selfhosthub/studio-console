@@ -156,6 +156,17 @@ def _pull_images(names: list[str], tag: str) -> bool:
     return all_ok
 
 
+def _fail_missing_images(missing: list[str], tag: str) -> None:
+    """Loud failure for absent images: the exact pull commands, never a build."""
+    error(f"Missing images: {', '.join(missing)}")
+    info("Pull them from the registry:")
+    for name in missing:
+        info(f"  docker pull ghcr.io/selfhosthub/{name}:{tag}")
+    warn("Check the tag (SHS_STUDIO_VERSION) and registry access.")
+    warn("Running from source? Images are never auto-built with a release tag;")
+    warn("use Images → Build to build them explicitly.")
+
+
 # ---------------------------------------------------------------------------
 # Config menu (main interactive menu when .env exists)
 # ---------------------------------------------------------------------------
@@ -266,21 +277,20 @@ def _restart_for_setup(
     new_profiles = {p for p in env_data.get("COMPOSE_PROFILES", "").split(",") if p}
 
     # Resolve missing images BEFORE stopping anything, a missing image must not
-    # leave a running stack torn down. In source mode we build; in registry mode
-    # we pull. Only if a pull fails do we bail, with everything still up.
+    # leave a running stack torn down. Missing images are never auto-built: a
+    # local build must not carry a release tag. Fail loud with the pull command.
     missing = _missing_images(env_file)
     if missing:
+        tag = env_data.get("SHS_STUDIO_VERSION", "latest")
         if _find_repo_root(env_file):
-            info(f"Building missing images: {', '.join(missing)}")
-            cmd_build(env_file, missing, confirm=False)
-        else:
-            tag = env_data.get("SHS_STUDIO_VERSION", "latest")
-            info(f"Pulling missing images: {', '.join(missing)}")
-            if not _pull_images(missing, tag):
-                error(f"Failed to pull images: {', '.join(missing)}")
-                warn("Check the tag (SHS_STUDIO_VERSION) and registry access.")
-                warn("No changes applied, services left as they were.")
-                return
+            _fail_missing_images(missing, tag)
+            warn("No changes applied, services left as they were.")
+            return
+        info(f"Pulling missing images: {', '.join(missing)}")
+        if not _pull_images(missing, tag):
+            _fail_missing_images(missing, tag)
+            warn("No changes applied, services left as they were.")
+            return
 
     # Stop workers directly, catches orphans whose profiles were removed from .env.
     # 'ps -a' so Created/Exited workers are removed too (avoids name collisions on
@@ -948,7 +958,7 @@ def _get_latest_registry_version() -> str | None:
 
 
 def cmd_start(context: str, env_file: Path) -> None:
-    """Start services. Builds missing images automatically."""
+    """Start services. Pulls missing images; never builds them implicitly."""
     if context == "host":
         _validate_env(env_file)
         env_data = read_env(env_file)
@@ -970,23 +980,22 @@ def cmd_start(context: str, env_file: Path) -> None:
 
         missing = _missing_images(env_file)
         if missing:
+            version = env_data.get("SHS_STUDIO_VERSION", "")
             if _find_repo_root(env_file):
-                info(f"Building missing images: {', '.join(missing)}")
-                cmd_build(env_file, missing, confirm=False)
-            else:
-                version = env_data.get("SHS_STUDIO_VERSION", "")
-                info(
-                    f"Pulling missing images from registry"
-                    + (f" (v{version})" if version else "")
-                    + f": {', '.join(missing)}"
-                )
-                try:
-                    run(compose_cmd(env_file) + ["pull"], timeout=600)
-                except Exception:
-                    error("The download was interrupted before it finished.")
-                    warn("Run Start again, it should pick up where it left off.")
-                    return False
-                ok("Images pulled")
+                _fail_missing_images(missing, version or "latest")
+                return False
+            info(
+                f"Pulling missing images from registry"
+                + (f" (v{version})" if version else "")
+                + f": {', '.join(missing)}"
+            )
+            try:
+                run(compose_cmd(env_file) + ["pull"], timeout=600)
+            except Exception:
+                error("The download was interrupted before it finished.")
+                warn("Run Start again, it should pick up where it left off.")
+                return False
+            ok("Images pulled")
 
         # Ensure nginx:alpine is available (always used)
         rc_ng, _ = run_quiet(["docker", "image", "inspect", "nginx:alpine"])

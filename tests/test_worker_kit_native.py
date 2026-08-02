@@ -1,7 +1,7 @@
 # tests/test_worker_kit_native.py
-"""Pure-function tests (no Docker) for the native worker kit. Pins the contract:
-arch normalization, pip-extra mapping, the generated install/doctor/run lines,
-and the api-image version probe."""
+"""Pure-function tests (no Docker) for the worker kit. Pins the contract:
+arch normalization, pip-extra mapping, placement-based API-URL defaults,
+the env-file handoff, the generated command lines, and the version probe."""
 
 from types import SimpleNamespace
 
@@ -43,17 +43,81 @@ class TestPipExtras:
         assert kit.GPU_BOUND_TYPES <= types
 
 
-class TestNativeKitLines:
-    def _lines(self, worker_type, extra_env=None):
-        return kit._native_kit_lines(
-            worker_type,
-            "1.3.0",
-            "https://api.example.com",
-            "https://studio.example.com",
-            "s3cret",
-            "~/studio-workspace",
-            extra_env or [],
+class TestDefaultApiUrl:
+    ENV = {
+        "SHS_NGINX_PORT": "8080",
+        "CONSOLE_PUBLIC_API_BASE_URL": "https://api.example.com",
+        "SHS_PUBLIC_BASE_URL": "https://studio.example.com",
+    }
+
+    def test_local_docker_is_direct(self):
+        url = kit._default_api_url(self.ENV, kit.PLACEMENT_LOCAL)
+        assert url == "http://host.docker.internal:8080"
+
+    def test_local_native_is_loopback(self):
+        url = kit._default_api_url(self.ENV, kit.PLACEMENT_LOCAL, native=True)
+        assert url == "http://127.0.0.1:8080"
+
+    def test_lan_is_direct_ip(self):
+        url = kit._default_api_url(self.ENV, kit.PLACEMENT_LAN, lan_ip="192.168.1.5")
+        assert url == "http://192.168.1.5:8080"
+
+    def test_remote_prefers_split_hostname(self):
+        url = kit._default_api_url(self.ENV, kit.PLACEMENT_REMOTE)
+        assert url == "https://api.example.com"
+
+    def test_remote_falls_back_to_public(self):
+        env = dict(self.ENV, CONSOLE_PUBLIC_API_BASE_URL="")
+        url = kit._default_api_url(env, kit.PLACEMENT_REMOTE)
+        assert url == "https://studio.example.com"
+
+    def test_tunnel_never_defaults_for_local_or_lan(self):
+        for placement in (kit.PLACEMENT_LOCAL, kit.PLACEMENT_LAN):
+            url = kit._default_api_url(self.ENV, placement, lan_ip="10.0.0.9")
+            assert "example.com" not in url
+
+
+class TestKitEnvLines:
+    def test_key_value_lines(self):
+        lines = kit._kit_env_lines(
+            [("SHS_API_BASE_URL", "http://h:80"), ("SHS_WORKER_SHARED_SECRET", "s3cret")]
         )
+        assert lines == [
+            "SHS_API_BASE_URL=http://h:80",
+            "SHS_WORKER_SHARED_SECRET=s3cret",
+        ]
+
+    def test_write_is_owner_only(self, tmp_path):
+        path = tmp_path / "studio-worker-general.env"
+        kit._write_kit_env(path, [("SHS_WORKER_SHARED_SECRET", "s3cret")])
+        assert path.read_text() == "SHS_WORKER_SHARED_SECRET=s3cret\n"
+        assert (path.stat().st_mode & 0o777) == 0o600
+
+
+class TestDockerKitLines:
+    ENTRY = {"profile": "worker-audio", "image": "studio-worker-audio"}
+
+    def test_always_emits_add_host(self):
+        lines = kit._docker_kit_lines(self.ENTRY, "1.3.0", "", "./w.env")
+        assert "  --add-host host.docker.internal:host-gateway \\" in lines
+
+    def test_references_env_file_and_never_secret(self):
+        lines = kit._docker_kit_lines(self.ENTRY, "1.3.0", "", "./w.env")
+        joined = "\n".join(lines)
+        assert "  --env-file ./w.env \\" in lines
+        assert "-e " not in joined
+        assert lines[-1] == "  ghcr.io/selfhosthub/studio-worker-audio:1.3.0"
+
+    def test_gpu_flag(self):
+        lines = kit._docker_kit_lines(self.ENTRY, "1.3.0", "all", "./w.env")
+        assert "  --gpus all \\" in lines
+        lines = kit._docker_kit_lines(self.ENTRY, "1.3.0", "1", "./w.env")
+        assert "  --gpus 'device=1' \\" in lines
+
+
+class TestNativeKitLines:
+    def _lines(self, worker_type):
+        return kit._native_kit_lines(worker_type, "1.3.0", "./studio-worker.env")
 
     def test_audio_pins_extra_and_version(self):
         lines = self._lines("audio")
@@ -66,27 +130,35 @@ class TestNativeKitLines:
         assert 'studio-worker/bin/pip install "studio-workers==1.3.0"' in lines
         assert "studio-worker/bin/studio-workers doctor --engine general" in lines
 
-    def test_comfyui_maps_to_comfyui_extra_and_keeps_env(self):
-        lines = self._lines(
-            "comfyui-image", extra_env=[("SHS_COMFYUI_URL", "http://gpu:8188")]
-        )
+    def test_comfyui_maps_to_comfyui_extra(self):
+        lines = self._lines("comfyui-image")
         assert (
             'studio-worker/bin/pip install "studio-workers[comfyui]==1.3.0"' in lines
         )
-        assert "SHS_COMFYUI_URL=http://gpu:8188 \\" in lines
         assert lines[-1] == "studio-worker/bin/studio-workers run --type comfyui-image"
 
-    def test_run_env_is_complete_and_index_free(self):
+    def test_env_comes_from_file_not_argv(self):
         lines = self._lines("audio")
+        assert "set -a; . ./studio-worker.env; set +a" in lines
         joined = "\n".join(lines)
-        for var in (
-            "SHS_API_BASE_URL=https://api.example.com",
-            "SHS_PUBLIC_BASE_URL=https://studio.example.com",
-            "SHS_WORKER_SHARED_SECRET=s3cret",
-            "SHS_WORKSPACE_ROOT=~/studio-workspace",
-        ):
-            assert var in joined
-        assert "--index-url" not in joined
+        assert "SHS_WORKER_SHARED_SECRET" not in joined
+
+
+class TestConnectivityNotes:
+    ENV = {
+        "CONSOLE_PUBLIC_API_BASE_URL": "https://api.example.com",
+        "SHS_PUBLIC_BASE_URL": "https://studio.example.com",
+    }
+
+    def test_tunnel_url_warns_about_upload_cap(self):
+        notes = kit._connectivity_notes("https://api.example.com", self.ENV)
+        assert any("100 MB" in n for n in notes)
+
+    def test_direct_url_has_no_cap_warning(self):
+        notes = kit._connectivity_notes("http://host.docker.internal:80", self.ENV)
+        assert not any("100 MB" in n for n in notes)
+        notes = kit._connectivity_notes("http://192.168.1.5:80", self.ENV)
+        assert not any("100 MB" in n for n in notes)
 
 
 class TestWorkersDistVersion:
