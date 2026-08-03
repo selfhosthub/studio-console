@@ -54,9 +54,10 @@ class TestDefaultApiUrl:
         url = kit._default_api_url(self.ENV, kit.PLACEMENT_LOCAL)
         assert url == "http://host.docker.internal:8080"
 
-    def test_local_native_is_loopback(self):
+    def test_local_native_is_published_api_port(self):
+        """Native workers bypass nginx: the front door 404s /api/v1/internal/*."""
         url = kit._default_api_url(self.ENV, kit.PLACEMENT_LOCAL, native=True)
-        assert url == "http://127.0.0.1:8080"
+        assert url == "http://127.0.0.1:8000"
 
     def test_lan_is_direct_ip(self):
         url = kit._default_api_url(self.ENV, kit.PLACEMENT_LAN, lan_ip="192.168.1.5")

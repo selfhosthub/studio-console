@@ -1,5 +1,5 @@
 # studio_console/commands_kit.py
-"""Worker kit - print paste-ready setup for a worker on this or another machine."""
+"""Worker kit - launch a worker on this machine, or hand off setup for another."""
 
 from __future__ import annotations
 
@@ -8,11 +8,12 @@ import platform
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from .constants import WORKER_CATALOG
-from .env import read_env
-from .tui import _bold, _dim, _interactive_single, _prompt, heading, info, ok, warn
+from .env import read_env, run, run_quiet
+from .tui import _bold, _dim, _interactive_single, _prompt, error, heading, info, ok, warn
 
 # worker_type -> studio-workers pip extra (None = base install covers it)
 PIP_EXTRAS = {
@@ -59,6 +60,36 @@ def _lan_ip() -> str | None:
         return None
 
 
+def _iface_addrs() -> list[str]:
+    """Global-scope IPv4 addresses of this host, LAN-routable first."""
+    addrs: list[str] = []
+    rc, out = run_quiet(["ip", "-4", "-o", "addr", "show", "scope", "global"])
+    if rc == 0:
+        for line in out.splitlines():
+            parts = line.split()
+            if "inet" in parts:
+                addr = parts[parts.index("inet") + 1].split("/")[0]
+                if addr not in addrs:
+                    addrs.append(addr)
+    lan = _lan_ip()
+    if lan:
+        if lan in addrs:
+            addrs.remove(lan)
+        addrs.insert(0, lan)
+    return addrs
+
+
+def _probe_status(url: str, timeout: int = 3) -> int:
+    """HTTP status of *url* from this machine; 0 = no answer."""
+    rc, out = run_quiet(
+        ["curl", "-so", "/dev/null", "-w", "%{http_code}", "--max-time", str(timeout), url]
+    )
+    code = out.strip()
+    if not code.isdigit():
+        return 0
+    return int(code) if int(code) != 0 else 0
+
+
 def _workers_dist_version(tag: str, runner=subprocess.run) -> str | None:
     """Read WORKERS_VERSION out of the api image; None when the image is absent
     locally or predates the version contract (pre-1.2.8)."""
@@ -102,11 +133,91 @@ def _default_api_url(
     the LAN, tunnel hostname only for remote hosts (the tunnel caps uploads)."""
     port = env_data.get("SHS_NGINX_PORT", "80")
     if placement == PLACEMENT_LOCAL:
-        host = "127.0.0.1" if native else "host.docker.internal"
-        return f"http://{host}:{port}"
+        # Native workers use the localhost-published API port: the front door
+        # 404s /api/v1/internal/*, so nginx URLs cannot claim jobs.
+        return "http://127.0.0.1:8000" if native else f"http://host.docker.internal:{port}"
     if placement == PLACEMENT_LAN:
         return f"http://{lan_ip or socket.gethostname()}:{port}"
     return _tunnel_url(env_data) or f"http://{lan_ip or socket.gethostname()}:{port}"
+
+
+def _api_hostname(env_data: dict) -> str:
+    """The API's own hostname (Host-header routed past the front-door 404)."""
+    host = env_data.get("SHS_API_HOSTNAME", "").strip()
+    if host:
+        return host
+    split_api = env_data.get("CONSOLE_PUBLIC_API_BASE_URL", "").rstrip("/")
+    if split_api.startswith("https://"):
+        return split_api.split("://", 1)[1].split("/")[0]
+    return ""
+
+
+def _compose_network(env_data: dict) -> str | None:
+    """The running stack's compose network, when it exists on this host."""
+    project = env_data.get("COMPOSE_PROJECT_NAME", "studio")
+    network = f"{project}_prod-network"
+    if run_quiet(["docker", "network", "inspect", network])[0] == 0:
+        return network
+    return None
+
+
+def _worker_api_target(
+    env_data: dict,
+    placement: str,
+    native: bool,
+    lan_ip: str | None = None,
+) -> tuple[str, str | None, list[tuple[str, str]], list[str]]:
+    """Derive (api_url, docker network, add-host entries, notes) by topology.
+
+    Workers talk to /api/v1/internal/*, which the front door 404s by design;
+    the working transports are the compose network (api:8000), the
+    api-hostname server block, or the localhost-published API port.
+    """
+    port = env_data.get("SHS_NGINX_PORT", "80")
+    hostname = _api_hostname(env_data)
+    if placement == PLACEMENT_LOCAL:
+        if native:
+            return "http://127.0.0.1:8000", None, [], []
+        network = _compose_network(env_data)
+        if network:
+            return "http://api:8000", network, [], []
+        if hostname:
+            return (
+                f"http://{hostname}:{port}",
+                None,
+                [(hostname, "host-gateway")],
+                [],
+            )
+        return (
+            f"http://host.docker.internal:{port}",
+            None,
+            [("host.docker.internal", "host-gateway")],
+            [
+                "No api hostname is configured and the stack's network was not found:",
+                "this URL hits the front door, which 404s worker job claims.",
+                "Set up split hostnames (Setup wizard, network section).",
+            ],
+        )
+    if placement == PLACEMENT_LAN:
+        ip = lan_ip or _lan_ip() or socket.gethostname()
+        if hostname:
+            add_hosts = [] if native else [(hostname, ip)]
+            notes = (
+                [f"On the worker machine, add to /etc/hosts: {ip} {hostname}"]
+                if native
+                else []
+            )
+            return f"http://{hostname}:{port}", None, add_hosts, notes
+        return (
+            f"http://{ip}:{port}",
+            None,
+            [],
+            [
+                "No api hostname is configured: this URL hits the front door, which",
+                "404s worker job claims. Set up split hostnames (Setup wizard).",
+            ],
+        )
+    return _tunnel_url(env_data), None, [], []
 
 
 def _kit_env_lines(run_env: list[tuple[str, str]]) -> list[str]:
@@ -122,24 +233,213 @@ def _write_kit_env(path: Path, run_env: list[tuple[str, str]]) -> None:
         f.write(content)
 
 
-def _docker_kit_lines(entry: dict, tag: str, gpu: str, env_file_ref: str) -> list[str]:
+def _docker_kit_lines(
+    entry: dict,
+    tag: str,
+    gpu: str,
+    env_file_ref: str,
+    network: str | None = None,
+    add_hosts: list[tuple[str, str]] | None = None,
+) -> list[str]:
     """Paste-ready docker run command; pure so tests can pin the contract.
-    --add-host is always emitted: without it a Linux docker host cannot resolve
-    host.docker.internal and fails late (worker registers, cannot reach ComfyUI)."""
+    --add-host host.docker.internal is always emitted: without it a Linux
+    docker host cannot resolve it and fails late (worker registers, cannot
+    reach ComfyUI). *add_hosts* carries the api-hostname mapping by topology."""
     lines = [
         f"docker run -d --name studio-{entry['profile']} \\",
         "  --restart unless-stopped \\",
     ]
+    if network:
+        lines.append(f"  --network {network} \\")
     if gpu:
         gpu_flag = "--gpus all" if gpu == "all" else f"--gpus 'device={gpu}'"
         lines.append(f"  {gpu_flag} \\")
+    hosts = [("host.docker.internal", "host-gateway")]
+    for host, ip in add_hosts or []:
+        if (host, ip) not in hosts:
+            hosts.append((host, ip))
+    for host, ip in hosts:
+        lines.append(f"  --add-host {host}:{ip} \\")
     lines += [
-        "  --add-host host.docker.internal:host-gateway \\",
         "  -v studio-workspace:/workspace \\",
         f"  --env-file {env_file_ref} \\",
         f"  ghcr.io/selfhosthub/{entry['image']}:{tag}",
     ]
     return lines
+
+
+def _docker_run_argv(
+    entry: dict,
+    image_ref: str,
+    gpu: str,
+    env_file_ref: str,
+    network: str | None = None,
+    add_hosts: list[tuple[str, str]] | None = None,
+) -> list[str]:
+    """argv form of the kit's docker run, for the console to exec itself.
+    Must stay flag-for-flag identical to _docker_kit_lines (pinned by test)."""
+    argv = [
+        "docker", "run", "-d", "--name", f"studio-{entry['profile']}",
+        "--restart", "unless-stopped",
+    ]
+    if network:
+        argv += ["--network", network]
+    if gpu:
+        argv += ["--gpus", "all" if gpu == "all" else f"device={gpu}"]
+    hosts = [("host.docker.internal", "host-gateway")]
+    for host, ip in add_hosts or []:
+        if (host, ip) not in hosts:
+            hosts.append((host, ip))
+    for host, ip in hosts:
+        argv += ["--add-host", f"{host}:{ip}"]
+    argv += [
+        "-v", "studio-workspace:/workspace",
+        "--env-file", env_file_ref,
+        image_ref,
+    ]
+    return argv
+
+
+def _pick_lan_ip(env_data: dict, prober=_probe_status) -> str:
+    """Pick the address LAN workers reach this host on, each probed live."""
+    port = env_data.get("SHS_NGINX_PORT", "80")
+    candidates = _iface_addrs()
+    host = socket.gethostname()
+    if host and "localhost" not in host and host not in candidates:
+        candidates.append(host)
+    if not candidates:
+        return _prompt("Address of this machine on your network", "").strip()
+    labeled = [(a, prober(f"http://{a}:{port}/health")) for a in candidates]
+    items = [
+        a + "  " + _dim("API answers here" if st == 200 else "no API answer from this machine")
+        for a, st in labeled
+    ]
+    items.append("Enter an address")
+    idx = _interactive_single("Address workers on your network will use", items, default=0)
+    if idx == len(items) - 1:
+        return _prompt("Address of this machine on your network", labeled[0][0]).strip()
+    return labeled[idx][0]
+
+
+def _pick_comfyui_url(env_data: dict, native: bool, prober=_probe_status) -> str:
+    """Pick-list of ComfyUI candidates probed on /system_stats; custom entry last.
+    host.docker.internal is probed as 127.0.0.1 (only containers resolve it)."""
+    candidates: list[str] = []
+    existing = env_data.get("SHS_COMFYUI_URL", "").rstrip("/")
+    if existing:
+        candidates.append(existing)
+    default_host = "127.0.0.1" if native else "host.docker.internal"
+    for host in (default_host, _lan_ip()):
+        if host:
+            url = f"http://{host}:8188"
+            if url not in candidates:
+                candidates.append(url)
+    labeled = []
+    for url in candidates:
+        probe_url = url.replace("host.docker.internal", "127.0.0.1")
+        labeled.append((url, prober(f"{probe_url}/system_stats")))
+    items = [
+        url + "  " + _dim("ComfyUI answers" if st == 200 else "no answer from this machine")
+        for url, st in labeled
+    ]
+    items.append("Enter a URL")
+    default = next((i for i, (_, st) in enumerate(labeled) if st == 200), 0)
+    idx = _interactive_single(
+        "ComfyUI server, as reachable FROM THE WORKER", items, default=default
+    )
+    if idx == len(items) - 1:
+        return _prompt(
+            "ComfyUI server URL, as reachable FROM THE WORKER",
+            labeled[0][0] if labeled else "http://127.0.0.1:8188",
+        )
+    return labeled[idx][0]
+
+
+def _measured_notes(api_url: str, prober=_probe_status) -> list[str]:
+    """Live reachability of the API URL from this machine, appended to the
+    inferred Connectivity verdicts."""
+    probe_url = (
+        api_url.replace("host.docker.internal", "127.0.0.1")
+        .replace("http://api:", "http://127.0.0.1:")
+        .rstrip("/")
+    )
+    status = prober(f"{probe_url}/health")
+    if status == 200:
+        return [f"Measured from this machine: {probe_url}/health answers 200."]
+    if status == 0:
+        return [
+            f"Measured from this machine: {probe_url}/health did not answer.",
+            "(A worker elsewhere may still reach it; this is only the view from here.)",
+        ]
+    return [f"Measured from this machine: {probe_url}/health answers HTTP {status}."]
+
+
+def _ensure_worker_image(image: str, tag: str) -> str | None:
+    """Resolve the worker image locally (ghcr then bare), pulling when absent."""
+    for prefix in ("ghcr.io/selfhosthub", "selfhosthub"):
+        ref = f"{prefix}/{image}:{tag}"
+        if run_quiet(["docker", "image", "inspect", ref])[0] == 0:
+            return ref
+    ref = f"ghcr.io/selfhosthub/{image}:{tag}"
+    info(f"Pulling {ref} ...")
+    try:
+        if run(["docker", "pull", ref], check=False, timeout=600).returncode != 0:
+            error(f"Pull failed: {ref}")
+            return None
+    except Exception:
+        error(f"Pull failed: {ref}")
+        return None
+    return ref
+
+
+def _wait_worker_registered(name: str, attempts: int = 30, interval: int = 2) -> bool:
+    """Poll the container log for the API registration line (JWT received)."""
+    for _ in range(attempts):
+        rc, out = run_quiet(["docker", "logs", "--tail", "100", name])
+        if rc == 0 and "Registered with API" in out:
+            return True
+        if not run_quiet(["docker", "ps", "-q", "--filter", f"name=^{name}$"])[1]:
+            return False
+        time.sleep(interval)
+    return False
+
+
+def _launch_local_worker(
+    entry: dict,
+    tag: str,
+    gpu: str,
+    kit_env_path: Path,
+    network: str | None = None,
+    add_hosts: list[tuple[str, str]] | None = None,
+) -> bool:
+    """Launch the worker container on this machine; the secret never prints."""
+    name = f"studio-{entry['profile']}"
+    if run_quiet(["docker", "version"])[0] != 0:
+        error("Docker is not available.")
+        return False
+    if run_quiet(["docker", "ps", "-aq", "--filter", f"name=^{name}$"])[1]:
+        warn(f"Container '{name}' already exists.")
+        print(f"  {_dim('Start it:')} {_bold(f'docker start {name}')}")
+        print(f"  {_dim('Replace it:')} {_bold(f'docker rm -f {name}')} then rerun the worker kit")
+        return False
+    image_ref = _ensure_worker_image(entry["image"], tag)
+    if image_ref is None:
+        return False
+    argv = _docker_run_argv(
+        entry, image_ref, gpu, str(kit_env_path), network=network, add_hosts=add_hosts
+    )
+    info(f"Launching {name} ({image_ref}) ...")
+    if run(argv, check=False).returncode != 0:
+        error("docker run failed.")
+        return False
+    ok(f"{name} started; the shared secret stayed in {kit_env_path} (never shown).")
+    info("Waiting for the worker to register with the API ...")
+    if _wait_worker_registered(name):
+        ok("Worker registered: Studio UI, Settings, Workers.")
+    else:
+        warn("Worker has not registered yet (model downloads can delay startup).")
+        print(f"  {_dim('Watch it:')} {_bold(f'docker logs -f {name}')}")
+    return True
 
 
 def _native_kit_lines(worker_type: str, dist_version: str, env_file_ref: str) -> list[str]:
@@ -186,6 +486,8 @@ def _connectivity_notes(api_url: str, env_data: dict) -> list[str]:
         ]
     if public.startswith("https://") and api_url == public:
         return cap_note
+    if api_url.startswith("http://api:"):
+        return ["Stack-internal URL: the worker joins the stack's docker network."]
     if "host.docker.internal" in api_url or "127.0.0.1" in api_url:
         return ["Local-only URL: works for a worker on this same machine."]
     if api_url.startswith("http://"):
@@ -245,7 +547,7 @@ def _print_native_kit(
         print(f"    {line}")
     print()
     print(f"  {_bold('Connectivity:')}")
-    for note in _connectivity_notes(api_url, env_data):
+    for note in _connectivity_notes(api_url, env_data) + _measured_notes(api_url):
         print(f"    {note}")
     print()
     info("doctor fails when torch cannot see the GPU; fix the install before running.")
@@ -257,8 +559,9 @@ def _print_native_kit(
 
 
 def cmd_worker_kit(context: str, env_file: Path) -> None:
-    """Interactive: worker type + placement, derive the API URL, write the env
-    file, print the paste-ready commands."""
+    """Interactive, topology-first: placement decides everything derivable.
+    This machine launches the worker itself; a command prints only when a
+    human is genuinely the transport (native shell, LAN, remote host)."""
     if not env_file.exists():
         warn("No .env found. Run setup first.")
         return
@@ -270,12 +573,6 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
     tag = env_data.get("SHS_STUDIO_VERSION", "latest")
 
     heading("Worker kit")
-    labels = [
-        w["component"] + (f"  {_dim(w['gpu'])}" if w["gpu"] else "")
-        for w in WORKER_CATALOG
-    ]
-    entry = WORKER_CATALOG[_interactive_single("Which worker?", labels, default=2)]
-
     placement = [PLACEMENT_LOCAL, PLACEMENT_LAN, PLACEMENT_REMOTE][
         _interactive_single(
             "Where will this worker run?",
@@ -287,6 +584,12 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
             default=0,
         )
     ]
+
+    labels = [
+        w["component"] + (f"  {_dim(w['gpu'])}" if w["gpu"] else "")
+        for w in WORKER_CATALOG
+    ]
+    entry = WORKER_CATALOG[_interactive_single("Which worker?", labels, default=2)]
 
     # Host-side arch decides the default kit: Docker on a Mac cannot reach the
     # GPU (and audio has no arm64 image), so Apple Silicon defaults GPU-bound
@@ -314,11 +617,24 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
             == 0
         )
 
-    default_url = _default_api_url(env_data, placement, native, _lan_ip())
-    if placement == PLACEMENT_REMOTE and not _tunnel_url(env_data):
+    # API target: derived by topology (URL plus the transport that makes it
+    # resolve: compose network, host-gateway, LAN mapping, tunnel DNS). A
+    # human types a URL only when nothing is derivable.
+    lan_ip = _pick_lan_ip(env_data) if placement == PLACEMENT_LAN else None
+    api_url, network, add_hosts, target_notes = _worker_api_target(
+        env_data, placement, native, lan_ip=lan_ip
+    )
+    if api_url:
+        info(f"API URL (derived): {api_url}")
+    else:
         warn("No public HTTPS hostname is configured; a remote worker cannot reach")
         warn("a LAN URL. Set up split hostnames (Setup wizard, network section).")
-    api_url = _prompt("API URL the worker will use", default_url).rstrip("/")
+        api_url = _prompt(
+            "API URL the worker will use",
+            _default_api_url(env_data, placement, native, _lan_ip()),
+        ).rstrip("/")
+    for note in target_notes:
+        warn(note)
 
     # Per-type extras
     gpu = ""
@@ -332,10 +648,7 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
             ("SHS_WHISPER_MODEL", env_data.get("SHS_WHISPER_MODEL", "base"))
         )
     elif entry["worker_type"] == "comfyui-image":
-        comfy = _prompt(
-            "ComfyUI server URL, as reachable FROM THE WORKER",
-            env_data.get("SHS_COMFYUI_URL", "http://127.0.0.1:8188"),
-        )
+        comfy = _pick_comfyui_url(env_data, native)
         extra_env.append(("SHS_COMFYUI_URL", comfy))
 
     public_base = env_data.get("SHS_PUBLIC_BASE_URL", "").rstrip("/") or api_url
@@ -373,7 +686,22 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
         )
         return
 
-    lines = _docker_kit_lines(entry, tag, gpu, env_file_ref)
+    if placement == PLACEMENT_LOCAL:
+        # This machine: the console is the transport, so it launches the
+        # worker itself; nothing to paste, secret never on screen.
+        if _launch_local_worker(
+            entry, tag, gpu, kit_env_path, network=network, add_hosts=add_hosts
+        ):
+            print()
+            print(f"  {_bold('Connectivity:')}")
+            for note in _connectivity_notes(api_url, env_data) + _measured_notes(api_url):
+                print(f"    {note}")
+            print()
+        return
+
+    lines = _docker_kit_lines(
+        entry, tag, gpu, env_file_ref, network=network, add_hosts=add_hosts
+    )
 
     _print_secret_handoff(kit_env_path, env_file_ref, placement)
     print()
@@ -383,7 +711,7 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
         print(f"    {line}")
     print()
     print(f"  {_bold('Connectivity:')}")
-    for note in _connectivity_notes(api_url, env_data):
+    for note in _connectivity_notes(api_url, env_data) + _measured_notes(api_url):
         print(f"    {note}")
     print()
     ok("Once started, the worker registers itself: Studio UI, Settings, Workers.")
