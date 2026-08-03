@@ -104,9 +104,7 @@ class SetupState:
             if existing_components
             else []
         )
-        self.comfyui_url: str = os.getenv("SHS_COMFYUI_URL") or self.existing.get(
-            "SHS_COMFYUI_URL", ""
-        )
+        self.comfyui_url: str = self.existing.get("SHS_COMFYUI_URL", "")
         # Audio worker GPU: "" = CPU, "all" = all GPUs, "0"/"1"/... = one device
         self.audio_gpu_device: str = self.existing.get("CONSOLE_AUDIO_GPU_DEVICE", "")
 
@@ -122,17 +120,13 @@ class SetupState:
         self.ui_replicas: int = int(self.existing.get("CONSOLE_UI_REPLICAS", "1"))
         self.nginx_port: int = int(self.existing.get("SHS_NGINX_PORT", "80"))
 
-        # Network - env vars override .env for quick testing
-        self.remote_api_url: str = os.getenv("SHS_API_BASE_URL") or self.existing.get(
+        # Network - ambient env is never an input; use --inject for overrides
+        self.remote_api_url: str = self.existing.get(
             "SHS_API_BASE_URL", "http://localhost:8000"
         )
-        self.public_domain: str = os.getenv("SHS_PUBLIC_BASE_URL") or self.existing.get(
-            "SHS_PUBLIC_BASE_URL", ""
-        )
+        self.public_domain: str = self.existing.get("SHS_PUBLIC_BASE_URL", "")
         # Optional split-hostname API URL. Empty == single-hostname mode.
-        self.public_api_domain: str = os.getenv(
-            "CONSOLE_PUBLIC_API_BASE_URL"
-        ) or self.existing.get("CONSOLE_PUBLIC_API_BASE_URL", "")
+        self.public_api_domain: str = self.existing.get("CONSOLE_PUBLIC_API_BASE_URL", "")
         # IP allowlist scope: "none" | "ui" | "both"
         self.ip_restrict_mode: str = self.existing.get("CONSOLE_IP_RESTRICT_MODE", "none")
 
@@ -168,9 +162,7 @@ class SetupState:
         self.studio_version: str = self.existing.get("SHS_STUDIO_VERSION", "")
 
         # Admin
-        self.admin_email: str = self.existing.get("SHS_ADMIN_EMAIL", "") or os.getenv(
-            "SHS_ADMIN_EMAIL", "admin@example.com"
-        )
+        self.admin_email: str = self.existing.get("SHS_ADMIN_EMAIL", "") or "admin@example.com"
         self.admin_password: str = ""
 
 
@@ -1067,8 +1059,8 @@ def _section_admin(state: SetupState) -> None:
     if bootstrapped.exists():
         return
 
-    env_email = os.getenv("SHS_ADMIN_EMAIL", "")
-    env_password = os.getenv("SHS_ADMIN_PASSWORD", "")
+    env_email = state.existing.get("SHS_ADMIN_EMAIL", "")
+    env_password = state.existing.get("SHS_ADMIN_PASSWORD", "")
 
     email = ""
     while not email or "@" not in email:
@@ -1755,18 +1747,32 @@ def wizard(context: str, env_file: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Non-interactive init (driven entirely by env vars)
+# Non-interactive init (driven by declared inputs, never ambient env)
 # ---------------------------------------------------------------------------
 
 
-def wizard_non_interactive(context: str, env_file: Path) -> bool:
-    """Write .env from environment variables, no prompts.
+def wizard_non_interactive(
+    context: str,
+    env_file: Path,
+    profile_path: Path | None = None,
+    explicit: dict[str, str] | None = None,
+) -> bool:
+    """Write .env from declared inputs (--secrets-profile / --inject), no prompts.
 
     Required for meaningful output: CONSOLE_COMPONENTS, secrets.
     Defaults: port 80, 1 API replica, 1 UI replica, no Cloudflare, registry mode.
     Cloudflare: set all five CF vars + SHS_PUBLIC_BASE_URL to activate.
     """
-    g = os.environ.get
+    from .resolve import load_profile
+
+    source = {
+        **(load_profile(profile_path) if profile_path else {}),
+        **(explicit or {}),
+    }
+
+    def g(key: str, default: str = "") -> str:
+        return source.get(key) or default
+
     state = SetupState(env_file)
 
     # Components — accept underscore aliases (e.g. General_worker) as well as canonical names

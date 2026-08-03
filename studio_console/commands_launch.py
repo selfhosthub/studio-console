@@ -41,6 +41,59 @@ CORE_PG_DB = "selfhost_studio"
 CORE_PG_USER = "postgres"
 
 
+SHAPE_CONTAINERS = {"full": CONTAINER_NAME, "core": CORE_CONTAINER_NAME}
+
+
+def _lifecycle_cmd(shape: str, action: str) -> list[str]:
+    """docker argv for a host-side lifecycle action on a launcher shape.
+
+    full/core containers are docker-run created (no compose labels), so their
+    lifecycle is docker start/stop/restart on the named container, never the
+    split compose stack.
+    """
+    return ["docker", action, SHAPE_CONTAINERS[shape]]
+
+
+def cmd_shape_lifecycle(
+    shape: str,
+    action: str,
+    workspace: Path | None = None,
+    profile_path: Path | None = None,
+    explicit: dict[str, str] | None = None,
+) -> bool:
+    """Host-side start/stop/restart/health for the full and core shapes.
+
+    The container keeps its launch-time env across docker start/restart, so a
+    profile change applies at the next launch-<shape>, not here.
+    """
+    container = SHAPE_CONTAINERS[shape]
+    exists = run_quiet(["docker", "ps", "-aq", "--filter", f"name=^{container}$"])[1]
+    if not exists:
+        error(f"No {container} container. Launch it with: studio-console launch-{shape}")
+        return False
+
+    if action in ("start", "restart") and (profile_path or explicit):
+        info(f"Config inputs apply at launch; to pick up profile changes: "
+             f"docker rm -f {container} && studio-console launch-{shape} --secrets-profile ...")
+
+    if action == "health":
+        rc, bound = run_quiet(["docker", "port", container, "80"])
+        port = bound.strip().splitlines()[0].rsplit(":", 1)[-1] if rc == 0 and bound.strip() else "80"
+        status = _curl_status(f"http://localhost:{port}/health")
+        if status == 200:
+            ok(f"{container} healthy (http://localhost:{port}/health)")
+            return True
+        error(f"{container} unhealthy (status {status or 'unreachable'})")
+        return False
+
+    info(f"{action} {container} ...")
+    if run(_lifecycle_cmd(shape, action), check=False).returncode != 0:
+        error(f"docker {action} {container} failed.")
+        return False
+    ok(f"{container} {action}ed." if action != "stop" else f"{container} stopped.")
+    return True
+
+
 def _read_manifest(image_ref: str, shape: str = "full") -> dict | None:
     """Read the launch manifest for *shape* from inside the image."""
     rc, out = run_quiet(
@@ -101,12 +154,14 @@ def _ensure_creds(
     state_dir: Path = STATE_DIR,
     state_file: Path = STATE_FILE,
     only: list[str] | None = None,
+    eff: dict | None = None,
 ) -> dict:
     """Return required_env creds, prompting once and persisting if not yet stored.
 
     *only* restricts which required_env names are handled here (the rest are
     owned by a caller-specific flow, e.g. core's DB provisioning). Returns just
-    the handled keys.
+    the handled keys. *eff* is the resolved boot config; ambient env is never
+    consulted.
     """
     entries = [e for e in manifest.get("required_env", []) if only is None or e["name"] in only]
     required = [e["name"] for e in entries]
@@ -121,7 +176,7 @@ def _ensure_creds(
         name = entry["name"]
         if state.get(name):
             continue
-        env_val = os.environ.get(name, "").strip()
+        env_val = (eff or {}).get(name, "").strip()
         if env_val:
             state[name] = env_val
         elif entry.get("secret"):
@@ -155,21 +210,46 @@ _FIRST_BOOT_SEED_VARS = [
 CF_TOKEN_MOUNT = "/run/secrets/cf-token"
 
 
-def _seed_first_boot_vars(workspace: Path, creds: dict) -> None:
-    """Inject worker counts and derived public-URL vars from host env, first boot only."""
+def _boot_env_file(workspace: Path, state_dir: Path, eff: dict) -> Path | None:
+    """Resolved config travels via a 0600 --env-file on every docker run, never argv.
+
+    The container's /workspace/.env is entrypoint-owned (root 0600), so the
+    host never merges into it; operational vars re-resolve here each launch.
+    """
+    from .constants import TRANSIENT_VARS
+
+    boot_file = state_dir / ".boot-env"
+    boot_file.unlink(missing_ok=True)
+    payload = {
+        k: v
+        for k, v in eff.items()
+        if k not in TRANSIENT_VARS and k != "CLOUDFLARE_TUNNEL_TOKEN"
+    }
+    if not payload:
+        return None
+    state_dir.mkdir(mode=0o700, exist_ok=True)
+    fd = os.open(boot_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        for key in sorted(payload):
+            fh.write(f"{key}={payload[key]}\n")
+    return boot_file
+
+
+def _seed_first_boot_vars(workspace: Path, creds: dict, eff: dict) -> None:
+    """Inject worker counts and derived public-URL vars from resolved config, first boot only."""
     if (workspace / ".env").exists():
         for name in _FIRST_BOOT_SEED_VARS:
-            if os.environ.get(name, "").strip():
+            if eff.get(name, "").strip():
                 info(f"{name}: kept existing.")
-        if os.environ.get("SHS_PUBLIC_BASE_URL", "").strip():
+        if eff.get("SHS_PUBLIC_BASE_URL", "").strip():
             info("public URLs: kept existing.")
         return
     for name in _FIRST_BOOT_SEED_VARS:
-        val = os.environ.get(name, "").strip()
+        val = eff.get(name, "").strip()
         if val:
             creds[name] = val
             info(f"seeded {name} (first boot).")
-    public_url = os.environ.get("SHS_PUBLIC_BASE_URL", "").strip()
+    public_url = eff.get("SHS_PUBLIC_BASE_URL", "").strip()
     if public_url:
         from .env import derive_url_vars
 
@@ -177,8 +257,8 @@ def _seed_first_boot_vars(workspace: Path, creds: dict) -> None:
         # stays on the in-container API and nginx single-origin CORS is untouched.
         urls = derive_url_vars(
             public_url,
-            os.environ.get("CONSOLE_PUBLIC_API_BASE_URL", ""),
-            os.environ.get("SHS_NGINX_PORT", "80"),
+            eff.get("CONSOLE_PUBLIC_API_BASE_URL", ""),
+            eff.get("SHS_NGINX_PORT", "80"),
         )
         creds["SHS_PUBLIC_BASE_URL"] = public_url
         for key in ("SHS_PUBLIC_API_URL", "SHS_WS_URL", "SHS_FRONTEND_URL"):
@@ -186,11 +266,11 @@ def _seed_first_boot_vars(workspace: Path, creds: dict) -> None:
         info("seeded public URLs (first boot).")
 
 
-def _cf_token_mount(workspace: Path, state_dir: Path) -> Path | None:
+def _cf_token_mount(workspace: Path, state_dir: Path, eff: dict) -> Path | None:
     """Write the token to a 0600 host file, return its path; None if no token or on relaunch."""
     token_file = state_dir / ".cf-token"
     token_file.unlink(missing_ok=True)
-    token = os.environ.get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
+    token = eff.get("CLOUDFLARE_TUNNEL_TOKEN", "").strip()
     if not token:
         return None
     if (workspace / ".env").exists():
@@ -213,6 +293,8 @@ def _build_run_cmd(
     network: str | None = None,
     publish_internal: bool = True,
     mounts: list[str] | None = None,
+    eff: dict | None = None,
+    env_file: Path | None = None,
 ) -> list[str]:
     """Assemble `docker run` from the manifest.
 
@@ -226,7 +308,7 @@ def _build_run_cmd(
     if network:
         cmd += ["--network", network]
     # Bind-address override for internal ports that carry localhost_publish.
-    bind_override = os.environ.get("SHS_PUBLISH_INTERNAL_BIND", "").strip()
+    bind_override = (eff or {}).get("SHS_PUBLISH_INTERNAL_BIND", "").strip()
     for port in manifest.get("ports", []):
         c = port["container"]
         if port.get("internal") and port.get("localhost_publish"):
@@ -240,13 +322,21 @@ def _build_run_cmd(
     cmd += ["-v", f"{workspace}:{vol}"]
     for spec in mounts or []:
         cmd += ["-v", spec]
+    if env_file:
+        cmd += ["--env-file", str(env_file)]
     for name, value in creds.items():
         cmd += ["-e", f"{name}={value}"]
     cmd.append(image_ref)
     return cmd
 
 
-def cmd_launch_full(context: str, tag: str | None = None, workspace: Path | None = None) -> bool:
+def cmd_launch_full(
+    context: str,
+    tag: str | None = None,
+    workspace: Path | None = None,
+    profile_path: Path | None = None,
+    explicit: dict[str, str] | None = None,
+) -> bool:
     """Launch the full single-image deployment and exec into its console."""
     if context != "host":
         error("launch-full runs on the host — you appear to be inside a container.")
@@ -257,8 +347,16 @@ def cmd_launch_full(context: str, tag: str | None = None, workspace: Path | None
 
     heading("Launch Studio (full)")
     from .cloudflare.cf_wizard import ingress_shape_mismatch
+    from .resolve import resolve_boot
 
-    mismatch = ingress_shape_mismatch("full", dict(os.environ))
+    workspace = workspace or (Path.home() / ".studio")
+    eff = resolve_boot(
+        workspace / ".env", profile_path, explicit or {}, os.environ, persist=False
+    )
+    if eff is None:
+        return False
+
+    mismatch = ingress_shape_mismatch("full", eff)
     if mismatch:
         error(mismatch)
         return False
@@ -275,15 +373,16 @@ def cmd_launch_full(context: str, tag: str | None = None, workspace: Path | None
     if manifest is None:
         return False
 
-    workspace = workspace or (Path.home() / ".studio")
     _ensure_workspace(workspace)
 
-    creds = _ensure_creds(manifest)
-    _seed_first_boot_vars(workspace, creds)
-    cf_token = _cf_token_mount(workspace, STATE_DIR)
+    creds = _ensure_creds(manifest, eff=eff)
+    boot_env = _boot_env_file(workspace, STATE_DIR, eff)
+    _seed_first_boot_vars(workspace, creds, eff)
+    cf_token = _cf_token_mount(workspace, STATE_DIR, eff)
     mounts = [f"{cf_token}:{CF_TOKEN_MOUNT}:ro"] if cf_token else None
     cmd = _build_run_cmd(
-        manifest, image_ref, creds, workspace, publish_internal=False, mounts=mounts
+        manifest, image_ref, creds, workspace, publish_internal=False,
+        mounts=mounts, eff=eff, env_file=boot_env,
     )
 
     info(f"Starting {image_ref} (data: {workspace}) ...")
@@ -302,7 +401,7 @@ def cmd_launch_full(context: str, tag: str | None = None, workspace: Path | None
     if api_healthy:
         from .commands import _full_plan
 
-        _bootstrap_admin(workspace, _full_plan(CONTAINER_NAME))
+        _bootstrap_admin(workspace, _full_plan(CONTAINER_NAME), eff=eff)
 
     info("Opening in-container console ...")
     run(["docker", "exec", "-it", CONTAINER_NAME, "studio-console"], check=False, timeout=None)
@@ -394,19 +493,19 @@ def _wait_pg_ready(attempts: int = 30, interval: int = 2) -> bool:
     return False
 
 
-def _resolve_core_db_url(engine_image: str, workspace: Path) -> str | None:
+def _resolve_core_db_url(engine_image: str, workspace: Path, eff: dict | None = None) -> str | None:
     """Return SHS_DATABASE_URL for core, provisioning as chosen.
 
-    Precedence: a persisted URL, then SHS_DATABASE_URL from the environment (so a
-    cloud Postgres can be scripted, same as the supervisor creds above), then a
-    three-way prompt: enter a URL, spin up the sidecar, or defer.
+    Precedence: a persisted URL, then SHS_DATABASE_URL from the resolved boot
+    config (so a cloud Postgres can be scripted, same as the supervisor creds
+    above), then a three-way prompt: enter a URL, spin up the sidecar, or defer.
     Returns None to mean "defer, do not launch core yet".
     """
     state = _load_state(CORE_STATE_FILE)
     if state.get("SHS_DATABASE_URL"):
         return state["SHS_DATABASE_URL"]
 
-    env_url = os.environ.get("SHS_DATABASE_URL", "").strip()
+    env_url = (eff or {}).get("SHS_DATABASE_URL", "").strip()
     if env_url:
         state["SHS_DATABASE_URL"] = env_url
         _save_state(state, CORE_STATE_DIR, CORE_STATE_FILE)
@@ -507,7 +606,13 @@ def _defer_core_db() -> None:
     print(f"  {_dim('Or set the URL directly in console state, then re-run launch-core.')}")
 
 
-def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None = None) -> bool:
+def cmd_launch_core(
+    context: str,
+    tag: str | None = None,
+    workspace: Path | None = None,
+    profile_path: Path | None = None,
+    explicit: dict[str, str] | None = None,
+) -> bool:
     """Launch the core single-image deployment against an external Postgres."""
     if context != "host":
         error("launch-core runs on the host — you appear to be inside a container.")
@@ -518,8 +623,16 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
 
     heading("Launch Studio (core)")
     from .cloudflare.cf_wizard import ingress_shape_mismatch
+    from .resolve import resolve_boot
 
-    mismatch = ingress_shape_mismatch("core", dict(os.environ))
+    workspace = workspace or (Path.home() / ".studio-core")
+    eff = resolve_boot(
+        workspace / ".env", profile_path, explicit or {}, os.environ, persist=False
+    )
+    if eff is None:
+        return False
+
+    mismatch = ingress_shape_mismatch("core", eff)
     if mismatch:
         error(mismatch)
         return False
@@ -536,7 +649,6 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
     if manifest is None:
         return False
 
-    workspace = workspace or (Path.home() / ".studio-core")
     _ensure_workspace(workspace)
 
     # Supervisor creds via the shared flow; DB via the dedicated 3-way prompt.
@@ -545,9 +657,12 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
         CORE_STATE_DIR,
         CORE_STATE_FILE,
         only=["SHS_SUPERVISOR_USER", "SHS_SUPERVISOR_PASSWORD"],
+        eff=eff,
     )
 
-    db_url = _resolve_core_db_url(manifest.get("_engine", {}).get("image", ""), workspace)
+    db_url = _resolve_core_db_url(
+        manifest.get("_engine", {}).get("image", ""), workspace, eff
+    )
     if db_url is None:
         return False  # deferred or aborted
     creds["SHS_DATABASE_URL"] = db_url
@@ -555,8 +670,9 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
     # boot and fails closed if it can't. Older images ignore the var.
     creds["SHS_DATABASE_APP_URL"] = _ensure_core_app_db_url(db_url)
 
-    _seed_first_boot_vars(workspace, creds)
-    cf_token = _cf_token_mount(workspace, CORE_STATE_DIR)
+    boot_env = _boot_env_file(workspace, CORE_STATE_DIR, eff)
+    _seed_first_boot_vars(workspace, creds, eff)
+    cf_token = _cf_token_mount(workspace, CORE_STATE_DIR, eff)
     mounts = [f"{cf_token}:{CF_TOKEN_MOUNT}:ro"] if cf_token else None
 
     # If the sidecar is on the core network, core must join it to reach the DB.
@@ -567,6 +683,8 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
         network=network,
         publish_internal=False,
         mounts=mounts,
+        eff=eff,
+        env_file=boot_env,
     )
 
     info(f"Starting {image_ref} (data: {workspace}) ...")
@@ -585,7 +703,9 @@ def cmd_launch_core(context: str, tag: str | None = None, workspace: Path | None
         from .commands import _core_plan
 
         _bootstrap_admin(
-            workspace, _core_plan(CORE_CONTAINER_NAME, CORE_PG_CONTAINER, nginx_port)
+            workspace,
+            _core_plan(CORE_CONTAINER_NAME, CORE_PG_CONTAINER, nginx_port),
+            eff=eff,
         )
     elif CORE_PG_CONTAINER not in db_url:
         _print_byo_provision_help(db_url, creds["SHS_DATABASE_APP_URL"])
@@ -627,7 +747,7 @@ def cmd_set_core_db_url(context: str, url: str | None = None) -> bool:
     return True
 
 
-def _bootstrap_admin(workspace: Path, plan: "object") -> None:
+def _bootstrap_admin(workspace: Path, plan: "object", eff: dict | None = None) -> None:
     """First-boot super admin creation, using the given shape's exec plan.
 
     *plan* is a _BootstrapPlan: full execs one container for both API and psql;
@@ -640,7 +760,7 @@ def _bootstrap_admin(workspace: Path, plan: "object") -> None:
 
     from .commands import _bootstrap_first_admin
 
-    _bootstrap_first_admin(env_file, plan)
+    _bootstrap_first_admin(env_file, plan, eff=eff)
 
 
 def _curl_status(url: str) -> int:

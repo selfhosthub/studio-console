@@ -533,9 +533,7 @@ def cmd_db_role(context: str, env_file: Path) -> None:
         info("Check Services → Health for the live posture.")
         return
 
-    db_url = env_data.get("SHS_DATABASE_URL", "") or os.environ.get(
-        "SHS_DATABASE_URL", ""
-    )
+    db_url = env_data.get("SHS_DATABASE_URL", "")
     if not db_url:
         error("No SHS_DATABASE_URL found. Configure the database first.")
         return
@@ -957,9 +955,19 @@ def _get_latest_registry_version() -> str | None:
     return versions[0] if versions else None
 
 
-def cmd_start(context: str, env_file: Path) -> None:
+def cmd_start(
+    context: str,
+    env_file: Path,
+    profile_path: Path | None = None,
+    explicit: dict[str, str] | None = None,
+) -> None:
     """Start services. Pulls missing images; never builds them implicitly."""
     if context == "host":
+        from .resolve import resolve_boot
+
+        eff = resolve_boot(env_file, profile_path, explicit or {}, os.environ)
+        if eff is None:
+            return False
         _validate_env(env_file)
         env_data = read_env(env_file)
 
@@ -1043,7 +1051,7 @@ def cmd_start(context: str, env_file: Path) -> None:
 
         # First boot: create super admin account directly in Postgres
         if healthy:
-            _bootstrap_first_admin(env_file)
+            _bootstrap_first_admin(env_file, eff=eff)
 
         return healthy
     else:
@@ -1187,19 +1195,27 @@ def _super_admin_exists(plan: "_BootstrapPlan", env_data: dict) -> bool:
 
 
 def _bootstrap_first_admin(
-    env_file: Path, plan: "_BootstrapPlan | None" = None
+    env_file: Path,
+    plan: "_BootstrapPlan | None" = None,
+    eff: dict[str, str] | None = None,
 ) -> bool:
-    """First-boot super admin + default org admin. Idempotent."""
+    """First-boot super admin + default org admin. Idempotent.
+
+    Credentials come from the resolved boot config (*eff*), then the shape's
+    .env; ambient env is never an input.
+    """
     # Skip if a super_admin already exists.
     env_data = _read_env_for_bootstrap(env_file, plan)
     check_plan = plan or _split_plan(env_file, env_data)
     if _super_admin_exists(check_plan, env_data):
         return True
 
+    source = {**env_data, **(eff or {})}
+
     print()
     info("First boot - create your super admin account (username: super_admin)")
-    admin_email = os.environ.get("SHS_ADMIN_EMAIL", "")
-    admin_password = os.environ.get("SHS_ADMIN_PASSWORD", "")
+    admin_email = source.get("SHS_ADMIN_EMAIL", "")
+    admin_password = source.get("SHS_ADMIN_PASSWORD", "")
     if not admin_email:
         while not admin_email or "@" not in admin_email:
             admin_email = _prompt("super_admin email", "super-admin@example.com")
@@ -1210,8 +1226,8 @@ def _bootstrap_first_admin(
 
     print()
     info("Create the default org's admin account (username: admin)")
-    default_admin_email = os.environ.get("CONSOLE_DEFAULT_ADMIN_EMAIL", "")
-    default_admin_password = os.environ.get("CONSOLE_DEFAULT_ADMIN_PASSWORD", "")
+    default_admin_email = source.get("CONSOLE_DEFAULT_ADMIN_EMAIL", "")
+    default_admin_password = source.get("CONSOLE_DEFAULT_ADMIN_PASSWORD", "")
     default_email_default = (
         "" if admin_email == "admin@example.com" else "admin@example.com"
     )
@@ -1234,10 +1250,11 @@ def _bootstrap_first_admin(
     if not default_admin_password:
         default_admin_password = _prompt_password("admin password")
 
-    # Prompt for entitlement token; _create_admin_direct reads it from env.
-    if not os.environ.get("SHS_ENTITLEMENT_TOKEN") and not _read_env_for_bootstrap(
-        env_file, plan
-    ).get("SHS_ENTITLEMENT_TOKEN"):
+    # _create_admin_direct reads the token from process env; bridge the
+    # resolved value there, else prompt.
+    if source.get("SHS_ENTITLEMENT_TOKEN"):
+        os.environ["SHS_ENTITLEMENT_TOKEN"] = source["SHS_ENTITLEMENT_TOKEN"]
+    elif not os.environ.get("SHS_ENTITLEMENT_TOKEN"):
         print()
         info("Entitlement token (enables the Plus catalog; leave blank to skip)")
         token = _prompt("Entitlement token", "").strip()
@@ -1596,10 +1613,8 @@ def cmd_restart(context: str, env_file: Path, service: str | None) -> None:
 
 
 def _app_db_url(env_data: dict) -> str:
-    """The restricted-role URL, from .env or process env (process env wins)."""
-    return os.environ.get("SHS_DATABASE_APP_URL", "") or env_data.get(
-        "SHS_DATABASE_APP_URL", ""
-    )
+    """The restricted-role URL from .env; ambient env is never an input."""
+    return env_data.get("SHS_DATABASE_APP_URL", "")
 
 
 def _print_db_role_posture(env_data: dict, api_up: bool) -> None:
