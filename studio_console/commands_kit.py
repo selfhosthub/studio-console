@@ -651,6 +651,11 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
         comfy = _pick_comfyui_url(env_data, native)
         extra_env.append(("SHS_COMFYUI_URL", comfy))
 
+    # Ordered queue list passthrough: the wheel/image derives the default
+    # from the worker type; an operator override in .env reaches the worker.
+    if env_data.get("SHS_WORKER_QUEUES"):
+        extra_env.append(("SHS_WORKER_QUEUES", env_data["SHS_WORKER_QUEUES"]))
+
     public_base = env_data.get("SHS_PUBLIC_BASE_URL", "").rstrip("/") or api_url
 
     kit_env_name = f"studio-worker-{entry['worker_type']}.env"
