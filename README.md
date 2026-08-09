@@ -44,7 +44,7 @@ uv tool install studio-console
 studio-console
 ```
 
-No uv and don't want it? `pip install studio-console` works anywhere Python 3.8+ is available. It installs into the active environment instead of an isolated one, so a virtualenv is a good idea.
+No uv and don't want it? `pip install studio-console` works anywhere Python 3.10+ is available. It installs into the active environment instead of an isolated one, so a virtualenv is a good idea.
 
 On first run with no `~/.studio/.env`, the wizard launches. Walk through the sections, save, then go to **Services → Start all**.
 
