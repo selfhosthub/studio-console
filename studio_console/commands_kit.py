@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import platform
+import shutil
 import socket
 import subprocess
 import sys
@@ -26,6 +27,9 @@ PIP_EXTRAS = {
 
 # Engines whose inference needs the GPU on the worker host itself
 GPU_BOUND_TYPES = {"audio", "video"}
+
+# Minimum Python studio-workers installs on; the printed venv line must guarantee it
+WORKERS_MIN_PYTHON = (3, 12)
 
 # Placement of the worker relative to the console host
 PLACEMENT_LOCAL = "local"
@@ -442,13 +446,47 @@ def _launch_local_worker(
     return True
 
 
-def _native_kit_lines(worker_type: str, dist_version: str, env_file_ref: str) -> list[str]:
+def _native_venv_cmd(placement: str) -> tuple[str, str | None]:
+    """Venv line that guarantees WORKERS_MIN_PYTHON, plus an optional footnote.
+
+    Stock macOS python3 predates it, so the bare interpreter is never printed.
+    Local placement probes this machine's PATH; other placements cannot probe.
+    """
+    want = "{}.{}".format(*WORKERS_MIN_PYTHON)
+    uv_hint = f"uv venv --python {want} --seed studio-worker"
+    if placement != PLACEMENT_LOCAL:
+        return (
+            f"python{want} -m venv studio-worker",
+            f"No python{want} on the worker machine? {uv_hint}  (uv: https://astral.sh/uv)",
+        )
+    if shutil.which("uv"):
+        return uv_hint, None
+    for minor in range(WORKERS_MIN_PYTHON[1] + 3, WORKERS_MIN_PYTHON[1] - 1, -1):
+        name = f"python{WORKERS_MIN_PYTHON[0]}.{minor}"
+        if shutil.which(name):
+            return f"{name} -m venv studio-worker", None
+    probe = f"import sys; raise SystemExit(0 if sys.version_info >= {WORKERS_MIN_PYTHON} else 1)"
+    if shutil.which("python3") and run_quiet(["python3", "-c", probe])[0] == 0:
+        return "python3 -m venv studio-worker", None
+    return (
+        f"python{want} -m venv studio-worker",
+        f"Python {want}+ is required and none was found on PATH. Get uv (https://astral.sh/uv) and run: {uv_hint}",
+    )
+
+
+def _native_kit_lines(
+    worker_type: str,
+    dist_version: str,
+    env_file_ref: str,
+    venv_cmd: str | None = None,
+) -> list[str]:
     """Paste-ready native (pip) worker setup; pure so tests can pin the contract."""
     extra = PIP_EXTRAS.get(worker_type)
     spec = f"studio-workers[{extra}]=={dist_version}" if extra else f"studio-workers=={dist_version}"
     engine = extra or worker_type
+    want = "{}.{}".format(*WORKERS_MIN_PYTHON)
     return [
-        "python3 -m venv studio-worker",
+        venv_cmd or f"python{want} -m venv studio-worker",
         f'studio-worker/bin/pip install "{spec}"',
         f"studio-worker/bin/studio-workers doctor --engine {engine}",
         f"set -a; . {env_file_ref}; set +a",
@@ -523,7 +561,8 @@ def _print_native_kit(
         warn("The Studio release notes name it; replace the placeholder below.")
         dist_version = "<studio-workers-version>"
 
-    lines = _native_kit_lines(entry["worker_type"], dist_version, env_file_ref)
+    venv_cmd, venv_note = _native_venv_cmd(placement)
+    lines = _native_kit_lines(entry["worker_type"], dist_version, env_file_ref, venv_cmd)
 
     print()
     print(f"  {_bold('This will download, from their own upstreams:')}")
@@ -545,6 +584,9 @@ def _print_native_kit(
     print()
     for line in lines:
         print(f"    {line}")
+    if venv_note:
+        print()
+        print(f"    {_dim(venv_note)}")
     print()
     print(f"  {_bold('Connectivity:')}")
     for note in _connectivity_notes(api_url, env_data) + _measured_notes(api_url):
@@ -714,6 +756,9 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
     print()
     for line in lines:
         print(f"    {line}")
+    if venv_note:
+        print()
+        print(f"    {_dim(venv_note)}")
     print()
     print(f"  {_bold('Connectivity:')}")
     for note in _connectivity_notes(api_url, env_data) + _measured_notes(api_url):

@@ -191,3 +191,49 @@ class TestWorkersDistVersion:
             kit._workers_dist_version("1.2.8", runner=self._runner(probe_out=""))
             is None
         )
+
+
+class TestNativeVenvCmd:
+    def _no_which(self, monkeypatch, allow=()):
+        monkeypatch.setattr(
+            kit.shutil, "which", lambda name: name if name in allow else None
+        )
+
+    def test_remote_prints_versioned_python_with_uv_note(self, monkeypatch):
+        self._no_which(monkeypatch)
+        cmd, note = kit._native_venv_cmd(kit.PLACEMENT_REMOTE)
+        assert cmd == "python3.12 -m venv studio-worker"
+        assert "uv venv --python 3.12 --seed studio-worker" in note
+
+    def test_local_prefers_uv(self, monkeypatch):
+        self._no_which(monkeypatch, allow={"uv", "python3.12"})
+        cmd, note = kit._native_venv_cmd(kit.PLACEMENT_LOCAL)
+        assert cmd == "uv venv --python 3.12 --seed studio-worker"
+        assert note is None
+
+    def test_local_falls_back_to_versioned_python(self, monkeypatch):
+        self._no_which(monkeypatch, allow={"python3.12"})
+        cmd, note = kit._native_venv_cmd(kit.PLACEMENT_LOCAL)
+        assert cmd == "python3.12 -m venv studio-worker"
+        assert note is None
+
+    def test_local_bare_python3_only_when_new_enough(self, monkeypatch):
+        self._no_which(monkeypatch, allow={"python3"})
+        monkeypatch.setattr(kit, "run_quiet", lambda cmd, timeout=10: (0, ""))
+        cmd, note = kit._native_venv_cmd(kit.PLACEMENT_LOCAL)
+        assert cmd == "python3 -m venv studio-worker"
+        assert note is None
+        monkeypatch.setattr(kit, "run_quiet", lambda cmd, timeout=10: (1, ""))
+        cmd, note = kit._native_venv_cmd(kit.PLACEMENT_LOCAL)
+        assert cmd == "python3.12 -m venv studio-worker"
+        assert "https://astral.sh/uv" in note
+
+    def test_kit_lines_never_print_bare_python3_by_default(self):
+        lines = kit._native_kit_lines("audio", "1.3.0", "./w.env")
+        assert lines[0] == "python3.12 -m venv studio-worker"
+
+    def test_kit_lines_use_given_venv_cmd(self):
+        lines = kit._native_kit_lines(
+            "audio", "1.3.0", "./w.env", "uv venv --python 3.12 --seed studio-worker"
+        )
+        assert lines[0] == "uv venv --python 3.12 --seed studio-worker"
