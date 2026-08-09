@@ -1706,8 +1706,9 @@ def wizard(context: str, env_file: Path) -> bool:
     env_data["CONSOLE_UI_REPLICAS"] = str(state.ui_replicas)
     env_data["SHS_NGINX_PORT"] = str(state.nginx_port)
 
-    if state.entitlement_token:
-        env_data["SHS_ENTITLEMENT_TOKEN"] = state.entitlement_token
+    # Always written, even empty: first boot skips its token prompt when the
+    # wizard already asked (key present = answered).
+    env_data["SHS_ENTITLEMENT_TOKEN"] = state.entitlement_token
 
     write_env(env_file, env_data)
 
@@ -1999,8 +2000,9 @@ def wizard_non_interactive(
         if comp in state.components:
             env_data[var] = state.worker_scale.get(comp, "1")
 
-    if state.entitlement_token:
-        env_data["SHS_ENTITLEMENT_TOKEN"] = state.entitlement_token
+    # Always written, even empty: first boot skips its token prompt when the
+    # wizard already asked (key present = answered).
+    env_data["SHS_ENTITLEMENT_TOKEN"] = state.entitlement_token
 
     if state.admin_email:
         env_data["SHS_ADMIN_EMAIL"] = state.admin_email

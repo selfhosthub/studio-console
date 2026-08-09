@@ -1194,6 +1194,24 @@ def _super_admin_exists(plan: "_BootstrapPlan", env_data: dict) -> bool:
     return rc == 0 and out.strip() == "1"
 
 
+def _resolve_entitlement_token(source: dict) -> None:
+    """Bridge the token to process env for _create_admin_direct.
+
+    A key present in source, even empty, means the wizard already asked;
+    prompt only when the question was never answered anywhere.
+    """
+    if source.get("SHS_ENTITLEMENT_TOKEN"):
+        os.environ["SHS_ENTITLEMENT_TOKEN"] = source["SHS_ENTITLEMENT_TOKEN"]
+    elif "SHS_ENTITLEMENT_TOKEN" not in source and not os.environ.get(
+        "SHS_ENTITLEMENT_TOKEN"
+    ):
+        print()
+        info("Entitlement token (enables the Plus catalog; leave blank to skip)")
+        token = _prompt("Entitlement token", "").strip()
+        if token:
+            os.environ["SHS_ENTITLEMENT_TOKEN"] = token
+
+
 def _bootstrap_first_admin(
     env_file: Path,
     plan: "_BootstrapPlan | None" = None,
@@ -1250,16 +1268,7 @@ def _bootstrap_first_admin(
     if not default_admin_password:
         default_admin_password = _prompt_password("admin password")
 
-    # _create_admin_direct reads the token from process env; bridge the
-    # resolved value there, else prompt.
-    if source.get("SHS_ENTITLEMENT_TOKEN"):
-        os.environ["SHS_ENTITLEMENT_TOKEN"] = source["SHS_ENTITLEMENT_TOKEN"]
-    elif not os.environ.get("SHS_ENTITLEMENT_TOKEN"):
-        print()
-        info("Entitlement token (enables the Plus catalog; leave blank to skip)")
-        token = _prompt("Entitlement token", "").strip()
-        if token:
-            os.environ["SHS_ENTITLEMENT_TOKEN"] = token
+    _resolve_entitlement_token(source)
 
     info("Creating super admin account...")
     super_admin_ok = False
