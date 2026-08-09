@@ -4,6 +4,8 @@
 This module knows nothing about Studio, components, or .env files.
 """
 
+import re
+import shutil
 import sys
 from typing import NoReturn
 
@@ -151,6 +153,19 @@ def _clear_lines(n: int) -> None:
     sys.stdout.flush()
 
 
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _physical_rows(lines: list[str]) -> int:
+    """Terminal rows the lines occupy once wrapped; _clear_lines needs rows, not lines."""
+    cols = shutil.get_terminal_size().columns
+    rows = 0
+    for line in lines:
+        vis = len(_ANSI_RE.sub("", line))
+        rows += max(1, -(-vis // cols)) if cols > 0 else 1
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Interactive menus
 # ---------------------------------------------------------------------------
@@ -208,7 +223,7 @@ def _interactive_multi(
         if required and not sel:
             lines.append(f"  {_dim('(select at least one)')}")
 
-        rendered_lines = len(lines)
+        rendered_lines = _physical_rows(lines)
         sys.stdout.write("\n".join(lines) + "\n")
         sys.stdout.flush()
 
@@ -289,7 +304,7 @@ def _interactive_single(
             else:
                 lines.append(f"    {num} {_dim('○')} {opt}")
 
-        rendered_lines = len(lines)
+        rendered_lines = _physical_rows(lines)
         sys.stdout.write("\n".join(lines) + "\n")
         sys.stdout.flush()
 
