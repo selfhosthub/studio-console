@@ -43,6 +43,9 @@ services:
     # Localhost-only API publish so native same-host workers can poll /internal/*.
     ports:
       - "127.0.0.1:8000:8000"
+    # uid/gid contract: containers write the bind mounts as the host user that
+    # owns them. The wizard records the invoking user's uid/gid in .env.
+    user: "${SHS_RUN_UID:-1000}:${SHS_RUN_GID:-1000}"
 
     env_file:
       - ${SHS_WORKSPACE_DIR}/.env
@@ -130,6 +133,8 @@ services:
 
     profiles: [worker-general]
 
+    user: "${SHS_RUN_UID:-1000}:${SHS_RUN_GID:-1000}"
+
     env_file:
       - ${SHS_WORKSPACE_DIR}/.env
     environment:
@@ -139,7 +144,7 @@ services:
       - SHS_WORKSPACE_ROOT=/workspace
       - SHS_WORKER_TYPE=general
     volumes:
-      - ${SHS_STORAGE_ROOT}:/workspace
+      - ${SHS_STORAGE_ROOT:?SHS_STORAGE_ROOT is required - set in .env}:/workspace
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -156,6 +161,8 @@ services:
 
     profiles: [worker-transfer]
 
+    user: "${SHS_RUN_UID:-1000}:${SHS_RUN_GID:-1000}"
+
     env_file:
       - ${SHS_WORKSPACE_DIR}/.env
     environment:
@@ -165,7 +172,7 @@ services:
       - SHS_WORKSPACE_ROOT=/workspace
       - SHS_WORKER_TYPE=transfer
     volumes:
-      - ${SHS_STORAGE_ROOT}:/workspace
+      - ${SHS_STORAGE_ROOT:?SHS_STORAGE_ROOT is required - set in .env}:/workspace
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -182,6 +189,8 @@ services:
 
     profiles: [worker-video]
 
+    user: "${SHS_RUN_UID:-1000}:${SHS_RUN_GID:-1000}"
+
     env_file:
       - ${SHS_WORKSPACE_DIR}/.env
     environment:
@@ -192,7 +201,7 @@ services:
       - SHS_WORKER_TYPE=video
       - SHS_WHISPER_MODEL=${SHS_WHISPER_MODEL:-base}
     volumes:
-      - ${SHS_STORAGE_ROOT}:/workspace
+      - ${SHS_STORAGE_ROOT:?SHS_STORAGE_ROOT is required - set in .env}:/workspace
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -209,6 +218,8 @@ services:
 
     profiles: [worker-audio]
 
+    user: "${SHS_RUN_UID:-1000}:${SHS_RUN_GID:-1000}"
+
     env_file:
       - ${SHS_WORKSPACE_DIR}/.env
     environment:
@@ -219,7 +230,7 @@ services:
       - SHS_WORKER_TYPE=audio
       - HF_HOME=/models/huggingface
     volumes:
-      - ${SHS_STORAGE_ROOT}:/workspace
+      - ${SHS_STORAGE_ROOT:?SHS_STORAGE_ROOT is required - set in .env}:/workspace
       - ${SHS_MODELS_ROOT:?SHS_MODELS_ROOT is required - set in .env}:/models
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -238,6 +249,8 @@ services:
 
     profiles: [worker-comfyui-image]
 
+    user: "${SHS_RUN_UID:-1000}:${SHS_RUN_GID:-1000}"
+
     env_file:
       - ${SHS_WORKSPACE_DIR}/.env
     environment:
@@ -248,7 +261,7 @@ services:
       - SHS_WORKER_TYPE=comfyui-image
       - SHS_COMFYUI_URL=${SHS_COMFYUI_URL:-}
     volumes:
-      - ${SHS_STORAGE_ROOT}:/workspace
+      - ${SHS_STORAGE_ROOT:?SHS_STORAGE_ROOT is required - set in .env}:/workspace
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

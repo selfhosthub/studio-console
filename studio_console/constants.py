@@ -135,6 +135,8 @@ ENV_SECTIONS = {
         "SHS_DB_DATA",
         "SHS_STORAGE_ROOT",
         "SHS_MODELS_ROOT",
+        "SHS_RUN_UID",
+        "SHS_RUN_GID",
         "CONSOLE_BACKUP_ROOT",
     ],
     "Version": ["SHS_STUDIO_VERSION"],
@@ -214,6 +216,9 @@ ENV_CLASSES: dict[str, str] = {
     "SHS_DB_DATA": ENV_CLASS_IDENTITY,
     "SHS_STORAGE_ROOT": ENV_CLASS_IDENTITY,
     "SHS_MODELS_ROOT": ENV_CLASS_IDENTITY,
+    # Ownership-bound: the uid/gid that owns everything under the workspace
+    "SHS_RUN_UID": ENV_CLASS_IDENTITY,
+    "SHS_RUN_GID": ENV_CLASS_IDENTITY,
     # Remote Cloudflare resources: ids and recorded ingress state
     "CLOUDFLARE_TUNNEL_TOKEN": ENV_CLASS_IDENTITY,
     "CLOUDFLARE_TUNNEL_ID": ENV_CLASS_IDENTITY,

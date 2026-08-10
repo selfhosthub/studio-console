@@ -763,6 +763,7 @@ def _write_override_and_nginx(state: "SetupState") -> None:
             f"  api-{i + 1}:\n"
             f"    container_name: studio-api-{i + 1}\n"
             f"    image: ghcr.io/selfhosthub/studio-api:{version_var}\n"
+            f'    user: "${{SHS_RUN_UID:-1000}}:${{SHS_RUN_GID:-1000}}"\n'
             # Replicas are distinct services, NOT scaled instances of `api`, so
             # they do not inherit the base service's env_file. Without this the
             # API can't read SHS_DATABASE_URL and crashloops on bootstrap.
@@ -1641,6 +1642,10 @@ def wizard(context: str, env_file: Path) -> bool:
         # SHS_WORKSPACE_DIR is the operator-facing knob; PRIVATE/SHARED_ROOT
         # are the live bind-mount sources docker compose reads.
         "SHS_WORKSPACE_ROOT": "/workspace",
+        # uid/gid the containers run as; matches the invoking user so bind-mount
+        # writes work on any host uid. Preserved across reruns once written.
+        "SHS_RUN_UID": state.existing.get("SHS_RUN_UID", "") or str(os.getuid()),
+        "SHS_RUN_GID": state.existing.get("SHS_RUN_GID", "") or str(os.getgid()),
         "SHS_WORKSPACE_DIR": _workspace_dir_default(),
         "SHS_DB_DATA": _workspace_dir_default() + "/db",
         "SHS_STORAGE_ROOT": _workspace_dir_default() + "/storage",
