@@ -955,6 +955,57 @@ def _get_latest_registry_version() -> str | None:
     return versions[0] if versions else None
 
 
+def _check_split_compose_contract(env_data: dict[str, str]) -> bool:
+    """Verify the pulled images declare the compose contract this console renders.
+
+    The bundled compose applies a runtime `user:` to worker services; images
+    that predate that contract (<= 1.3.0) run a fixed uid 999 and break under
+    it. The api image speaks for the set: its launch manifest must declare
+    shapes.split.compose_capabilities.runtime_user. Only checked when a worker
+    profile is active - the core services are unaffected by the override.
+    Returns True when starting is safe.
+    """
+    from .commands_launch import MANIFEST_PATH_IN_IMAGE
+    from .env import run_quiet
+
+    active = {p for p in env_data.get("COMPOSE_PROFILES", "").split(",") if p}
+    if not any(p.startswith("worker-") for p in active):
+        return True
+
+    version = env_data.get("SHS_STUDIO_VERSION", "")
+    image_ref = f"ghcr.io/selfhosthub/studio-api:{version}"
+    rc, out = run_quiet(
+        ["docker", "run", "--rm", "--entrypoint", "cat", image_ref, MANIFEST_PATH_IN_IMAGE],
+        timeout=60,
+    )
+    declared: dict = {}
+    if rc == 0:
+        try:
+            declared = (
+                json.loads(out).get("shapes", {}).get("split", {}).get("compose_capabilities", {})
+            )
+        except json.JSONDecodeError:
+            declared = {}
+
+    if "runtime_user" in declared:
+        return True
+
+    error("These Studio images predate the compose worker contract this console uses.")
+    print()
+    print(f"   Image set: {version or 'unknown'} (checked {image_ref})")
+    print("   This console's compose runs workers under your user id, which")
+    print("   images from Studio 1.3.0 and earlier do not support - their")
+    print("   workers would fail on caches and scratch writes.")
+    print()
+    print("   Either:")
+    print("     • Upgrade: set SHS_STUDIO_VERSION to a release after 1.3.0")
+    print("       (Images → Upgrade), then Start again.")
+    print("     • Or stay on these images with a console 1.8.x:")
+    print("       uv tool install 'studio-console<1.9'")
+    print()
+    return False
+
+
 def cmd_start(
     context: str,
     env_file: Path,
@@ -1004,6 +1055,9 @@ def cmd_start(
                 warn("Run Start again, it should pick up where it left off.")
                 return False
             ok("Images pulled")
+
+        if not _check_split_compose_contract(env_data):
+            return False
 
         # Ensure nginx:alpine is available (always used)
         rc_ng, _ = run_quiet(["docker", "image", "inspect", "nginx:alpine"])
