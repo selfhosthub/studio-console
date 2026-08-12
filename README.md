@@ -56,7 +56,7 @@ The wizard creates `~/.studio/` containing `.env` (0600), `docker-compose.yml`, 
 ├── db/         postgres data         (SHS_DB_DATA)
 ├── storage/    orgs, uploads, outputs (SHS_STORAGE_ROOT, mounted at /workspace in containers)
 ├── models/     model files            (SHS_MODELS_ROOT)
-└── backups/    local DB dumps         (SHS_BACKUP_ROOT)
+└── backups/    local DB dumps         (CONSOLE_BACKUP_ROOT)
 ```
 
 Each data subdir is its own env var, so a cloud deploy can repoint individual roots at CloudSQL, GCS, or a network volume without changing code. **Protect this directory and never delete `.env`.** Two of its values cannot be regenerated:
@@ -69,13 +69,16 @@ Back both up separately (password manager, secrets vault) so you can recover if 
 ### Non-interactive (scripted / CI)
 
 ```bash
-SHS_CREDENTIAL_ENCRYPTION_KEY=<32+ char key> \
-SHS_ADMIN_EMAIL=admin@example.com \
-SHS_ADMIN_PASSWORD=<password> \
-studio-console init && studio-console start
+studio-console init \
+  --inject SHS_CREDENTIAL_ENCRYPTION_KEY=<32+ char key> \
+  --inject SHS_ADMIN_EMAIL=admin@example.com \
+  --inject SHS_ADMIN_PASSWORD=<password>
+studio-console start
 ```
 
-Full list of supported environment variables in [docs/env-vars.md](docs/env-vars.md).
+Inputs are declared flags: `--inject KEY=VALUE` (repeatable), `--inject-file FILE`, or `--secrets-profile FILE`. Ambient `SHS_*` exports are never read as inputs, and conflicting exports make `start` refuse to boot.
+
+Full list of supported variables in [docs/env-vars.md](docs/env-vars.md).
 
 ---
 
@@ -129,10 +132,11 @@ studio-console launch-core
 studio-console launch-core --tag 1.2.4 --workspace ~/.studio-core
 ```
 
-Precedence for the database URL: a saved value from `core-db-url`, then the `SHS_DATABASE_URL` environment variable, then an interactive prompt. Export the env var to boot Core unattended against a remote Postgres with no prompt:
+Precedence for the database URL: the saved value from `core-db-url`, then `SHS_DATABASE_URL` from the workspace `.env`, then an interactive prompt. Ambient exports are never read (conflicting `SHS_*` exports refuse boot). Save the URL once to boot Core unattended with no prompt:
 
 ```sh
-SHS_DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/studio studio-console launch-core
+studio-console core-db-url postgresql+asyncpg://user:pass@host:5432/studio
+studio-console launch-core
 ```
 
 Re-enter and run one-off commands the same way as Full, swapping the container name:
@@ -152,7 +156,7 @@ Services → Stop all       bring everything down
 Services → Health         check API + worker status
 Services → View logs      recent logs (all or per-service)
 Services → Stream logs    follow live (Ctrl-C to stop)
-Services → Links          open UI and API docs in browser
+Services → Links          print UI and API docs URLs
 
 Backup → Backup all       database + .env + org files
 Backup → Restore DB       pick a .sql file from disk
@@ -170,7 +174,7 @@ Backups land in `~/.studio/backups/studio-YYYYMMDD_HHMMSS/`.
 Images → Upgrade
 ```
 
-Pulls the latest tag from GHCR, updates `SHS_STUDIO_VERSION` in `.env`, and restarts all services. If the new version's major doesn't match your database's major, the upgrade is blocked with a clear message. See [docs/architecture.md](docs/architecture.md#major-version-boundary-detection).
+Shows a version picker (default: newest), pulls the chosen tag from GHCR, updates `SHS_STUDIO_VERSION` in `.env`, and restarts all services. If the new version's major doesn't match your database's major, the upgrade is blocked with a clear message. See [docs/architecture.md](docs/architecture.md#major-version-boundary-detection).
 
 **studio-console itself:**
 
@@ -201,9 +205,10 @@ studio-console config                   # show current .env values
 studio-console config set KEY VALUE     # set a single .env value
 studio-console config unset KEY         # remove a single .env value
 studio-console workers                  # list/scale workers
+studio-console worker-kit               # print setup commands for a worker on another machine
 studio-console reset-password           # reset super admin password
 studio-console wizard                   # re-run setup wizard
-studio-console init                     # non-interactive setup from env vars
+studio-console init                     # non-interactive setup from declared inputs (--inject / --secrets-profile)
 studio-console self-update              # upgrade studio-console itself
 studio-console version                  # print version
 
