@@ -8,7 +8,6 @@ For related deep dives:
 
 - **Environment variables** — every `SHS_*` and supporting var: [env-vars.md](env-vars.md)
 - **Public hostname topology** — single vs split hostnames, Cloudflare Access: [topology.md](topology.md)
-- **Hybrid VPS + RunPod deployments** — GPU worker pods on RunPod: [vps-runpod.md](vps-runpod.md)
 
 ---
 
@@ -219,7 +218,7 @@ Operator remedy when the block fires: set `SHS_STUDIO_VERSION` back to a tag mat
 | `container` | `/.dockerenv` exists | `/workspace/.env` | `supervisorctl` + direct psql |
 | `runpod` | `RUNPOD_POD_ID` set | `/workspace/.env` | `supervisorctl` + direct psql |
 
-`host` is the Split shape; `container` covers Core and Full; `runpod` is the Full image running on RunPod (worker pods specifically). The `commands.py` host-mode menu and `commands_container.py` container-mode menu diverge at the top of `cli.py:main()`.
+`host` is the Split shape; `container` covers Core and Full; `runpod` is the Full image on a cloud GPU pod (detected via `RUNPOD_POD_ID`). The `commands.py` host-mode menu and `commands_container.py` container-mode menu diverge at the top of `cli.py:main()`.
 
 Any new feature must handle all three contexts. Mirror the host/else branching in `_read_current_db_revision` and `major_version.read_db_revision`.
 

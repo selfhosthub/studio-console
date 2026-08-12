@@ -117,7 +117,7 @@ Inside the container the console manages services via `supervisorctl` (health, r
 
 ## Run the Core image
 
-The **Core** image (`studio-core`) is the same single-container API + UI as Full, but without a bundled database. You bring your own Postgres (a managed cloud instance, a RunPod sidecar, any reachable server). `launch-core` runs it on your machine and drops you into its in-container console.
+The **Core** image (`studio-core`) is the same single-container API + UI as Full, but without a bundled database. You bring your own Postgres (a managed cloud instance, a sidecar on a GPU pod, any reachable server). `launch-core` runs it on your machine and drops you into its in-container console.
 
 Point Core at your database first, then launch:
 
@@ -226,7 +226,6 @@ For the Full or Core image, run operational subcommands through `docker exec stu
 - **[Architecture](docs/architecture.md)**: file layout, state flow, Compose wiring, first-boot, internals (wizard vs init, orphan workers, backup format, major-version detection, deployment contexts).
 - **[Environment variables](docs/env-vars.md)**: every `SHS_*` and supporting var.
 - **[Public hostname topology](docs/topology.md)**: single vs split hostnames, Cloudflare tunnel + Access, IP restrictions.
-- **[VPS + RunPod deployments](docs/vps-runpod.md)**: hybrid setups with GPU worker pods on RunPod.
 
 ---
 

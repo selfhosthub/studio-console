@@ -243,7 +243,7 @@ def _print_container_restart_notice() -> None:
     container = os.environ.get("HOSTNAME", "").strip() or "<container>"
     print(f"  {_red('Restart the whole container to apply — the count is frozen at boot.')}")
     print(f"  {_red('Any in-flight jobs on these workers will be dropped.')}")
-    print(f"  {_red('From the host (or the RunPod pod controls):')} {_red(_bold(f'docker restart {container}'))}")
+    print(f"  {_red('From the host (or your pod controls):')} {_red(_bold(f'docker restart {container}'))}")
 
 
 def _cmd_workers() -> None:

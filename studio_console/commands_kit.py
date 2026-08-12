@@ -765,8 +765,4 @@ def cmd_worker_kit(context: str, env_file: Path) -> None:
         print(f"    {note}")
     print()
     ok("Once started, the worker registers itself: Studio UI, Settings, Workers.")
-    if placement == PLACEMENT_REMOTE:
-        print(
-            f"  {_dim('Rented GPU host guide: docs/vps-runpod.md in the studio-console repo.')}"
-        )
     print()
