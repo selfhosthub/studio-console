@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# scripts/hooks/pre-commit
+#
+# AI-attribution guard (breaking). Provider references stay legal -
+# "Anthropic Claude" as an integration is product surface. Attribution
+# idioms are not. Internal seat files (CLAUDE.md, .claude/) are exempt.
+#
+# Install: cp scripts/hooks/pre-commit .git/hooks/pre-commit
+
+set -euo pipefail
+
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
+[ -z "$STAGED_ALL" ] && exit 0
+
+ATTRIB_PATTERN='[Cc]o-[Aa]uthored-[Bb]y:.*[Cc]laude|[Gg]enerated [Ww]ith.*[Cc]la[au]de|noreply@anthropic\.com|🤖 [Gg]enerated|([Ww]ritten|[Aa]uthored|[Cc]reated|[Ii]mplemented|[Ss]uggested|[Bb]uilt) [Bb]y [Cc]laude'
+ATTRIB_FILES=$(echo "$STAGED_ALL" | grep -vE '^(CLAUDE\.md$|\.claude/)' || true)
+if [ -n "$ATTRIB_FILES" ]; then
+    ATTRIB_HITS=$(git diff --cached -U0 --diff-filter=ACMR -- $ATTRIB_FILES 2>/dev/null | \
+        awk '/^--- /{next} /^\+\+\+ /{file=substr($0,7); next} /^\+[^+]/{print file":"substr($0,2)}' | \
+        grep -E "$ATTRIB_PATTERN" || true)
+    if [ -n "$ATTRIB_HITS" ]; then
+        echo "ERROR: AI-attribution language in staged changes:" >&2
+        echo "$ATTRIB_HITS" >&2
+        echo "Remove the attribution. References to the Claude provider/service are fine." >&2
+        exit 1
+    fi
+fi
