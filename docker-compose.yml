@@ -278,7 +278,7 @@ services:
   # ===========================================================================
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.8.1@sha256:d9ff527dc19799e24d3689058161fb01e752a24be1823577bae54c9c2489275f
     profiles: [cloudflared]
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
