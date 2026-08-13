@@ -553,11 +553,23 @@ map $http_upgrade $connection_upgrade {{
     ""      close;
 }}
 
+# Forwarded scheme from the edge when present, else nginx's own listener
+# scheme. cloudflared terminates TLS and proxies plain HTTP, so $scheme alone
+# reports http for an https request.
+map $http_x_forwarded_proto $forwarded_proto {{
+    default $scheme;
+    https   https;
+    http    http;
+}}
+
 # UI hostname: serves the UI and proxies same-origin /api, /ws, /uploads
 # requests from the browser to the API. Whatever Access policy is on this
 # hostname applies to all of these paths.
 server {{
     listen 80;
+    # nginx builds its own Location headers from $scheme; relative keeps
+    # them on the edge scheme.
+    absolute_redirect off;
     server_name {ui_host};
 
     # Compression — all responses are proxied from upstreams, so gzip_proxied
@@ -592,7 +604,7 @@ server {{
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
     }}
 
     # Worker control endpoints never ride the UI front door; workers use the
@@ -607,7 +619,7 @@ server {{
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
 
         proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -629,7 +641,7 @@ server {{
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
     }}
 }}
 
@@ -638,6 +650,9 @@ server {{
 # All paths route to the API — there is no UI fallback here.
 server {{
     listen 80;
+    # nginx builds its own Location headers from $scheme; relative keeps
+    # them on the edge scheme.
+    absolute_redirect off;
     server_name {api_host};
 
     location /nginx-health {{
@@ -652,7 +667,7 @@ server {{
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
 
         proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -851,6 +866,9 @@ upstream studio_ui {
 
 server {
     listen 80;
+    # nginx builds its own Location headers from $scheme; relative keeps
+    # them on the edge scheme.
+    absolute_redirect off;
 
     # Compression — all responses are proxied from upstreams, so gzip_proxied
     # must be set or nginx skips them by default.
@@ -886,7 +904,7 @@ server {
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
     }
 
     # API + WebSocket + static uploads (org media served by API)
@@ -902,7 +920,7 @@ server {
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
 
         # WebSocket upgrade
         proxy_set_header Upgrade    $http_upgrade;
@@ -926,7 +944,7 @@ server {
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
     }
 }
 
@@ -934,6 +952,15 @@ server {
 map $http_upgrade $connection_upgrade {
     default upgrade;
     \"\"      close;
+}
+
+# Forwarded scheme from the edge when present, else nginx's own listener
+# scheme. cloudflared terminates TLS and proxies plain HTTP, so $scheme alone
+# reports http for an https request.
+map $http_x_forwarded_proto $forwarded_proto {
+    default $scheme;
+    https   https;
+    http    http;
 }
 """
 
