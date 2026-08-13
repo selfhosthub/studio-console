@@ -64,6 +64,17 @@ def _generate_fernet_key() -> str:
     return Fernet.generate_key().decode()
 
 
+def _run_uid() -> str:
+    """Container uid. Docker Desktop maps bind-mount ownership through its VM, so a
+    macOS host uid only mismatches the image's appuser and locks it out of /app."""
+    return "1000" if sys.platform == "darwin" else str(os.getuid())
+
+
+def _run_gid() -> str:
+    """Container gid. Same reasoning as _run_uid."""
+    return "1000" if sys.platform == "darwin" else str(os.getgid())
+
+
 def _workspace_dir_default(getter=None) -> str:
     """Resolve the host-side workspace dir as an absolute path.
 
@@ -1671,8 +1682,8 @@ def wizard(context: str, env_file: Path) -> bool:
         "SHS_WORKSPACE_ROOT": "/workspace",
         # uid/gid the containers run as; matches the invoking user so bind-mount
         # writes work on any host uid. Preserved across reruns once written.
-        "SHS_RUN_UID": state.existing.get("SHS_RUN_UID", "") or str(os.getuid()),
-        "SHS_RUN_GID": state.existing.get("SHS_RUN_GID", "") or str(os.getgid()),
+        "SHS_RUN_UID": state.existing.get("SHS_RUN_UID", "") or _run_uid(),
+        "SHS_RUN_GID": state.existing.get("SHS_RUN_GID", "") or _run_gid(),
         "SHS_WORKSPACE_DIR": _workspace_dir_default(),
         "SHS_DB_DATA": _workspace_dir_default() + "/db",
         "SHS_STORAGE_ROOT": _workspace_dir_default() + "/storage",
