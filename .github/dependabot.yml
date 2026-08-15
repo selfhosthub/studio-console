@@ -1,0 +1,12 @@
+version: 2
+
+updates:
+  # Bumps the SHA-pinned action refs in .github/workflows/ and rewrites the
+  # trailing version comment. One grouped PR per week for all of them.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
